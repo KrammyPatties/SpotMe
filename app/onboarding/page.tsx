@@ -31,8 +31,8 @@ export default async function OnboardingPage() {
     .order("name");
 
   return (
-    <div style={{ padding: "2rem", maxWidth: 500 }}>
-      <h1>Create your profile</h1>
+    <div className="mx-auto max-w-lg px-4 py-10">
+      <h1 className="text-3xl font-bold">Create your profile</h1>
       <OnboardingForm gyms={gyms ?? []} />
     </div>
   );
