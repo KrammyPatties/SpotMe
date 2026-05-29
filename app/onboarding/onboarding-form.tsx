@@ -22,8 +22,8 @@ export function OnboardingForm({ gyms }: { gyms: Gym[] }) {
       prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
     );
   }
-
-  async function handleSubmit(e: React.FormEvent) {
+  
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSaving(true);

@@ -42,8 +42,8 @@ export default function RootLayout({
                 <Image
                   src="/spotme-logo.png"
                   alt="SpotMe"
-                  width={1435}
-                  height={785}
+                  width={1154}
+                  height={264}
                   className="h-8 w-auto"
                   priority
                 />
