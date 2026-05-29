@@ -5,17 +5,32 @@ import { useRouter } from "next/navigation";
 
 type Gym = { id: string; name: string; outlet: string; region: string | null };
 
-export function OnboardingForm({ gyms }: { gyms: Gym[] }) {
+type InitialData = {
+  display_name?: string;
+  age?: number | null;
+  experience?: string;
+  gender?: string | null;
+  bio?: string | null;
+  gym_ids?: string[];
+};
+
+export function OnboardingForm({
+  gyms,
+  initial,
+}: {
+  gyms: Gym[];
+  initial?: InitialData;
+}) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [displayName, setDisplayName] = useState("");
-  const [age, setAge] = useState("");
-  const [experience, setExperience] = useState("beginner");
-  const [gender, setGender] = useState("");
-  const [bio, setBio] = useState("");
-  const [gymIds, setGymIds] = useState<string[]>([]);
+  const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
+  const [age, setAge] = useState(initial?.age != null ? String(initial.age) : "");
+  const [experience, setExperience] = useState(initial?.experience ?? "beginner");
+  const [gender, setGender] = useState(initial?.gender ?? "");
+  const [bio, setBio] = useState(initial?.bio ?? "");
+  const [gymIds, setGymIds] = useState<string[]>(initial?.gym_ids ?? []);
 
   function toggleGym(id: string) {
     setGymIds((prev) =>
@@ -134,7 +149,7 @@ export function OnboardingForm({ gyms }: { gyms: Gym[] }) {
             disabled={saving}
             className="bg-flame px-4 py-3 font-semibold text-cream hover:opacity-90 disabled:opacity-50"
         >
-            {saving ? "Saving…" : "Create profile"}
+            {saving ? "Saving…" : initial ? "Edit profile" : "Create profile"}
         </button>
     </form>
   );

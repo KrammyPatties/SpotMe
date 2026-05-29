@@ -1,0 +1,48 @@
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { supabaseAdmin } from "@/lib/supabase/server";
+import { OnboardingForm } from "@/app/onboarding/onboarding-form";
+
+export default async function ProfilePage() {
+  const { userId } = await auth();
+  if (!userId) redirect("/");
+
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("*")
+    .eq("clerk_user_id", userId)
+    .maybeSingle();
+
+  if (!profile) redirect("/onboarding");
+
+  const { data: gyms } = await supabaseAdmin
+    .from("gyms")
+    .select("id, name, outlet, region")
+    .order("name");
+
+  const { data: userGyms } = await supabaseAdmin
+    .from("user_gyms")
+    .select("gym_id")
+    .eq("clerk_user_id", userId);
+
+  const selectedGymIds = (userGyms ?? []).map((row) => row.gym_id);
+
+  return (
+    <main className="mx-auto max-w-lg px-4 py-10">
+      <h1 className="text-3xl font-bold">Your profile</h1>
+      <p className="mt-1 text-ink/70">Edit your profile</p>
+
+      <OnboardingForm
+        gyms={gyms ?? []}
+        initial={{
+          display_name: profile.display_name,
+          age: profile.age,
+          experience: profile.experience,
+          gender: profile.gender,
+          bio: profile.bio,
+          gym_ids: selectedGymIds,
+        }}
+      />
+    </main>
+  );
+}
