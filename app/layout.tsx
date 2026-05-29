@@ -8,6 +8,7 @@ import {
   UserButton,
 } from "@clerk/nextjs";
 import "./globals.css";
+import Image from "next/image";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,17 +34,38 @@ export default function RootLayout({
     <ClerkProvider>
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-      >
+        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
         <body className="min-h-full flex flex-col">
-          <header style={{ display: "flex", justifyContent: "flex-end", gap: "1rem", padding: "1rem" }}>
-            <Show when="signed-out">
-              <SignInButton />
-              <SignUpButton />
-            </Show>
-            <Show when="signed-in">
-              <UserButton />
-            </Show>
+          <header className="border-b border-ink/10 bg-cream">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+              <a href="/" className="flex items-center gap-2">
+                <Image
+                  src="/spotme-logo.png"
+                  alt="SpotMe"
+                  width={1435}
+                  height={785}
+                  className="h-8 w-auto"
+                  priority
+                />
+              </a>
+              <div className="flex items-center gap-3">
+                <Show when="signed-out">
+                  <SignInButton>
+                    <button className="text-sm font-medium text-ink hover:text-flame">
+                      Sign in
+                    </button>
+                  </SignInButton>
+                  <SignUpButton>
+                    <button className="bg-flame px-4 py-2 text-sm font-semibold text-cream hover:opacity-90">
+                      Sign up
+                    </button>
+                  </SignUpButton>
+                </Show>
+                <Show when="signed-in">
+                  <UserButton />
+                </Show>
+              </div>
+            </div>
           </header>
           {children}
         </body>

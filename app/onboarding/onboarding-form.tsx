@@ -48,90 +48,94 @@ export function OnboardingForm({ gyms }: { gyms: Gym[] }) {
       return;
     }
 
-    // Saved — reload the page; it'll now show "you already have a profile".
     router.refresh();
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
-      <label>
-        Display name *
-        <input
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          required
-          style={{ display: "block", width: "100%", padding: "0.5rem" }}
-        />
-      </label>
-
-      <label>
-        Age
-        <input
-          type="number"
-          value={age}
-          onChange={(e) => setAge(e.target.value)}
-          min={13}
-          max={120}
-          style={{ display: "block", width: "100%", padding: "0.5rem" }}
-        />
-      </label>
-
-      <label>
-        Experience
-        <select
-          value={experience}
-          onChange={(e) => setExperience(e.target.value)}
-          style={{ display: "block", width: "100%", padding: "0.5rem" }}
-        >
-          <option value="beginner">Beginner</option>
-          <option value="intermediate">Intermediate</option>
-          <option value="advanced">Advanced</option>
-        </select>
-      </label>
-
-      <label>
-        Gender
-        <select
-          value={gender}
-          onChange={(e) => setGender(e.target.value)}
-          style={{ display: "block", width: "100%", padding: "0.5rem" }}
-        >
-          <option value="">Prefer not to say</option>
-          <option value="male">Male</option>
-          <option value="female">Female</option>
-          <option value="non-binary">Non-binary</option>
-        </select>
-      </label>
-
-      <label>
-        Bio
-        <textarea
-          value={bio}
-          onChange={(e) => setBio(e.target.value)}
-          rows={3}
-          style={{ display: "block", width: "100%", padding: "0.5rem" }}
-        />
-      </label>
-
-      <fieldset style={{ padding: "0.5rem" }}>
-        <legend>Home gym(s)</legend>
-        {gyms.map((g) => (
-          <label key={g.id} style={{ display: "block" }}>
+    <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
+        <label className="grid gap-1">
+            <span className="text-sm font-medium">Display name *</span>
             <input
-              type="checkbox"
-              checked={gymIds.includes(g.id)}
-              onChange={() => toggleGym(g.id)}
-            />{" "}
-            {g.name} — {g.outlet}
-          </label>
-        ))}
-      </fieldset>
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            required
+            className="rounded border border-ink/20 bg-white px-3 py-2 focus:border-flame focus:outline-none"
+            />
+        </label>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
+        <label className="grid gap-1">
+            <span className="text-sm font-medium">Age</span>
+            <input
+            type="number"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            min={13}
+            max={120}
+            className="rounded border border-ink/20 bg-white px-3 py-2 focus:border-flame focus:outline-none"
+            />
+        </label>
 
-      <button type="submit" disabled={saving} style={{ padding: "0.75rem" }}>
-        {saving ? "Saving…" : "Create profile"}
-      </button>
+        <label className="grid gap-1">
+            <span className="text-sm font-medium">Experience</span>
+            <select
+            value={experience}
+            onChange={(e) => setExperience(e.target.value)}
+            className="rounded border border-ink/20 bg-white px-3 py-2 focus:border-flame focus:outline-none"
+            >
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+            </select>
+        </label>
+
+        <label className="grid gap-1">
+            <span className="text-sm font-medium">Gender</span>
+            <select
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+            className="rounded border border-ink/20 bg-white px-3 py-2 focus:border-flame focus:outline-none"
+            >
+            <option value="">Prefer not to say</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="non-binary">Non-binary</option>
+            </select>
+        </label>
+
+        <label className="grid gap-1">
+            <span className="text-sm font-medium">Bio</span>
+            <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            rows={3}
+            className="rounded border border-ink/20 bg-white px-3 py-2 focus:border-flame focus:outline-none"
+            />
+        </label>
+
+        <fieldset className="rounded border border-ink/20 bg-white p-3">
+            <legend className="px-1 text-sm font-medium">Home gym(s)</legend>
+            {gyms.map((g) => (
+            <label key={g.id} className="flex items-center gap-2 py-1">
+                <input
+                type="checkbox"
+                checked={gymIds.includes(g.id)}
+                onChange={() => toggleGym(g.id)}
+                className="accent-flame"
+                />
+                <span>{g.name} — {g.outlet}</span>
+            </label>
+            ))}
+        </fieldset>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <button
+            type="submit"
+            disabled={saving}
+            className="bg-flame px-4 py-3 font-semibold text-cream hover:opacity-90 disabled:opacity-50"
+        >
+            {saving ? "Saving…" : "Create profile"}
+        </button>
     </form>
   );
 }
