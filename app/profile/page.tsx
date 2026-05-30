@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { OnboardingForm } from "@/app/onboarding/onboarding-form";
+import Link from "next/link";
 
 export default async function ProfilePage() {
   const { userId } = await auth();
@@ -43,6 +44,13 @@ export default async function ProfilePage() {
           gym_ids: selectedGymIds,
         }}
       />
+
+      <Link
+        href="/dashboard"
+        className="mt-6 inline-block text-sm font-medium text-flame hover:underline"
+      >
+        Back to dashboard
+      </Link>
     </main>
   );
 }

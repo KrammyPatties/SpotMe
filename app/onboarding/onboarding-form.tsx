@@ -23,6 +23,7 @@ export function OnboardingForm({
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
@@ -41,6 +42,7 @@ export function OnboardingForm({
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setSaved(false);
     setSaving(true);
 
     const res = await fetch("/api/profile", {
@@ -56,6 +58,8 @@ export function OnboardingForm({
       }),
     });
 
+    setSaving(false);
+
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       setError(body.error ?? "Something went wrong.");
@@ -63,6 +67,7 @@ export function OnboardingForm({
       return;
     }
 
+    setSaved(true);
     router.refresh();
   }
 
@@ -149,7 +154,7 @@ export function OnboardingForm({
             disabled={saving}
             className="bg-flame px-4 py-3 font-semibold text-cream hover:opacity-90 disabled:opacity-50"
         >
-            {saving ? "Saving…" : initial ? "Edit profile" : "Create profile"}
+            {saving ? "Saving…" : saved ? "Saved!" : initial ? "Edit profile" : "Create profile"}
         </button>
     </form>
   );
