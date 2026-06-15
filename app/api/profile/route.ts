@@ -11,7 +11,7 @@ export async function POST(req: Request) {
 
   // Read the submitted fields.
   const body = await req.json();
-  const { display_name, age, experience, gender, bio, gym_ids } = body;
+  const { display_name, age, experience, gender, bio, gym_ids, workout_style, availability } = body;
 
   if (!display_name || typeof display_name !== "string") {
     return NextResponse.json({ error: "Display name is required" }, { status: 400 });
@@ -25,6 +25,7 @@ export async function POST(req: Request) {
     experience: experience ?? "beginner",
     gender: gender ?? null,
     bio: bio ?? null,
+    workout_style: workout_style ?? "no_preference",
     updated_at: new Date().toISOString(),
   });
 
@@ -42,6 +43,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: gymError.message }, { status: 500 });
     }
   }
+
+	// Validate workout style if provided
+	const VALID_STYLES = ["powerlifting","bodybuilding","hiit","calisthenics","crossfit","general","no_preference"];
+	
+	if (workout_style != null && !VALID_STYLES.includes(workout_style)) {
+  	return NextResponse.json({ error: "Invalid workout style" }, { status: 400 });
+	}
+
+  // Replace availability slots (same delete-all-then-insert pattern as gyms above)
+	await supabaseAdmin.from("availability").delete().eq("clerk_user_id", userId);
+
+	if (Array.isArray(availability) && availability.length > 0) {
+		const rows = availability.map((s: { day: number; time: string }) => ({
+			clerk_user_id: userId,
+			day_of_week: s.day,
+			time_of_day: s.time,
+		}));
+		const { error: availError } = await supabaseAdmin.from("availability").insert(rows);
+		if (availError) {
+			return NextResponse.json({ error: availError.message }, { status: 500 });
+		}
+	}
 
   return NextResponse.json({ ok: true });
 }
