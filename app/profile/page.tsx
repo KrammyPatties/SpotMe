@@ -18,7 +18,7 @@ export default async function ProfilePage() {
 
   const { data: gyms } = await supabaseAdmin
     .from("gyms")
-    .select("id, name, outlet, region")
+    .select("id, name, chain, postal_code")
     .order("name");
 
   const { data: userGyms } = await supabaseAdmin
