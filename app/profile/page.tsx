@@ -28,6 +28,16 @@ export default async function ProfilePage() {
 
   const selectedGymIds = (userGyms ?? []).map((row) => row.gym_id);
 
+  const { data: userAvailability } = await supabaseAdmin
+  .from("availability")
+  .select("day_of_week, time_of_day")
+  .eq("clerk_user_id", userId);
+
+  const availabilitySlots = (userAvailability ?? []).map((row) => ({
+    day: row.day_of_week,
+    time: row.time_of_day,
+  }));
+
   return (
     <main className="mx-auto max-w-lg px-4 py-10">
       <h1 className="text-3xl font-bold">Your profile</h1>
@@ -42,6 +52,8 @@ export default async function ProfilePage() {
           gender: profile.gender,
           bio: profile.bio,
           gym_ids: selectedGymIds,
+          workout_style: profile.workout_style,
+          availability: availabilitySlots,
         }}
       />
 
