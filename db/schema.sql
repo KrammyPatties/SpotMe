@@ -2,8 +2,6 @@
 -- Supabase Query Name will be shown in the comment above each query
 
 
-
-
 -- Gym and User Profile Schema
 
 
@@ -112,12 +110,18 @@ create table gyms (
   unique (name, postal_code)                                -- a gym is identified by name + where it is
 );
 
-delete from gyms
-where latitude is null;
-
 -- feat: add match preferences to profiles
 -- Empty array = no preference (accept all). Reuses existing enums as arrays.
 alter table profiles
   add column preferred_experience experience_level[]   not null default '{}',
   add column preferred_gender     gender_type[]         not null default '{}',
   add column preferred_styles     workout_style_type[]  not null default '{}';
+
+-- Clear any orphaned rows first (gym_id values no longer in gyms)
+delete from user_gyms
+where gym_id not in (select id from gyms);
+
+-- Re-add the FK with cascade delete (remove a gym -> remove its links)
+alter table user_gyms
+  add constraint user_gyms_gym_id_fkey
+  foreign key (gym_id) references gyms(id) on delete cascade;
