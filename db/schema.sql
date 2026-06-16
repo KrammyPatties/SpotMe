@@ -114,3 +114,10 @@ create table gyms (
 
 delete from gyms
 where latitude is null;
+
+-- feat: add match preferences to profiles
+-- Empty array = no preference (accept all). Reuses existing enums as arrays.
+alter table profiles
+  add column preferred_experience experience_level[]   not null default '{}',
+  add column preferred_gender     gender_type[]         not null default '{}',
+  add column preferred_styles     workout_style_type[]  not null default '{}';
