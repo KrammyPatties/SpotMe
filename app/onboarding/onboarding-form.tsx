@@ -5,8 +5,12 @@ import { useRouter } from "next/navigation";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIMES = ["morning", "afternoon", "evening"] as const;
+const EXPERIENCE_OPTS = ["beginner", "intermediate", "advanced"];
+const GENDER_OPTS = ["male", "female", "non-binary"];
+const STYLE_OPTS = ["powerlifting", "bodybuilding", "hiit", "calisthenics", "crossfit", "general"];
 
-type Gym = { id: string; name: string; outlet: string; region: string | null };
+
+type Gym = { id: string; name: string; chain: string; postal_code: string };
 
 type InitialData = {
   display_name?: string;
@@ -17,6 +21,9 @@ type InitialData = {
   gym_ids?: string[];
   workout_style?: string | null;   
   availability?: { day: number; time: string }[];
+  preferred_experience?: string[];
+  preferred_gender?: string[];
+  preferred_styles?: string[];
 };
  
 export function OnboardingForm({
@@ -37,7 +44,11 @@ export function OnboardingForm({
   const [gender, setGender] = useState(initial?.gender ?? "");
   const [bio, setBio] = useState(initial?.bio ?? "");
   const [gymIds, setGymIds] = useState<string[]>(initial?.gym_ids ?? []);
+  const [gymQuery, setGymQuery] = useState("");
   const [workoutStyle, setWorkoutStyle] = useState(initial?.workout_style ?? "no_preference",);
+  const [prefExperience, setPrefExperience] = useState<string[]>(initial?.preferred_experience ?? []);
+  const [prefGender, setPrefGender] = useState<string[]>(initial?.preferred_gender ?? []);
+  const [prefStyles, setPrefStyles] = useState<string[]>(initial?.preferred_styles ?? []);
   
   function toggleGym(id: string) {
     setGymIds((prev) =>
@@ -58,6 +69,15 @@ function toggleSlot(day: number, time: string) {
   });
 }
 
+function toggleInArray(
+  setter: React.Dispatch<React.SetStateAction<string[]>>,
+  value: string,
+) {
+  setter((prev) =>
+    prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+  );
+}
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -76,6 +96,9 @@ function toggleSlot(day: number, time: string) {
         gym_ids: gymIds,
         workout_style: workoutStyle,
         availability: slots,
+        preferred_experience: prefExperience,
+        preferred_gender: prefGender,
+        preferred_styles: prefStyles,
     }) });
 
     setSaving(false);
@@ -90,6 +113,13 @@ function toggleSlot(day: number, time: string) {
     setSaved(true);
     router.refresh();
   }
+
+    const q = gymQuery.trim().toLowerCase();
+    const filteredGyms = q === ""
+        ? gyms
+        : gyms.filter((g) => g.name.toLowerCase().includes(q));
+
+  const selectedGyms = gyms.filter((g) => gymIds.includes(g.id));
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 grid gap-4">
@@ -154,17 +184,56 @@ function toggleSlot(day: number, time: string) {
 
         <fieldset className="rounded border border-ink/20 bg-white p-3">
             <legend className="px-1 text-sm font-medium">Home gym(s)</legend>
-            {gyms.map((g) => (
-            <label key={g.id} className="flex items-center gap-2 py-1">
-                <input
-                type="checkbox"
-                checked={gymIds.includes(g.id)}
-                onChange={() => toggleGym(g.id)}
-                className="accent-flame"
-                />
-                <span>{g.name} — {g.outlet}</span>
-            </label>
-            ))}
+
+            {/* selected gyms as removable chips */}
+            {selectedGyms.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                    {selectedGyms.map((g) => (
+                        <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => toggleGym(g.id)}
+                            className="flex items-center gap-1 rounded-full bg-flame px-3 py-1 text-sm text-cream hover:opacity-90"
+                        >
+                            {g.name}
+                            <span aria-hidden>×</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* search box */}
+            <input
+                type="text"
+                value={gymQuery}
+                onChange={(e) => setGymQuery(e.target.value)}
+                placeholder="Search gyms by name or chain…"
+                className="w-full rounded border border-ink/20 px-3 py-2 focus:border-flame focus:outline-none"
+            />
+
+            {/* results list - scrollable */}
+            <div className="mt-2 max-h-48 overflow-y-auto rounded border border-ink/10">
+                {filteredGyms.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-ink/50">No gyms match “{gymQuery}”.</p>
+                ) : (
+                    filteredGyms.map((g) => {
+                        const selected = gymIds.includes(g.id);
+                        return (
+                            <button
+                                key={g.id}
+                                type="button"
+                                onClick={() => toggleGym(g.id)}
+                                className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-ink/5 ${
+                                    selected ? "font-medium text-flame" : ""
+                                }`}
+                            >
+                                <span>{g.name}</span>
+                                {selected && <span aria-hidden>✓</span>}
+                            </button>
+                        );
+                    })
+                )}
+            </div>
         </fieldset>
 
         <label className="grid gap-1">
@@ -217,6 +286,85 @@ function toggleSlot(day: number, time: string) {
         </div>
         </fieldset>
 
+        <fieldset className="rounded border border-ink/20 bg-white p-3">
+            <legend className="px-1 text-sm font-medium">I want to train with - experience level</legend>
+
+            {/* No preference: checked when the array is empty; clears the group */}
+            <label className="flex items-center gap-2 py-1">
+                <input
+                    type="checkbox"
+                    checked={prefExperience.length === 0}
+                    onChange={() => setPrefExperience([])}
+                    className="accent-flame"
+                />
+                <span>No preference</span>
+            </label>
+
+            {EXPERIENCE_OPTS.map((opt) => (
+                <label key={opt} className="flex items-center gap-2 py-1">
+                    <input
+                        type="checkbox"
+                        checked={prefExperience.includes(opt)}
+                        onChange={() => toggleInArray(setPrefExperience, opt)}
+                        className="accent-flame"
+                    />
+                    <span className="capitalize">{opt}</span>
+                </label>
+            ))}
+        </fieldset>
+
+                <fieldset className="rounded border border-ink/20 bg-white p-3">
+            <legend className="px-1 text-sm font-medium">I want to train with - gender</legend>
+
+            <label className="flex items-center gap-2 py-1">
+                <input
+                    type="checkbox"
+                    checked={prefGender.length === 0}
+                    onChange={() => setPrefGender([])}
+                    className="accent-flame"
+                />
+                <span>No preference</span>
+            </label>
+
+            {GENDER_OPTS.map((opt) => (
+                <label key={opt} className="flex items-center gap-2 py-1">
+                    <input
+                        type="checkbox"
+                        checked={prefGender.includes(opt)}
+                        onChange={() => toggleInArray(setPrefGender, opt)}
+                        className="accent-flame"
+                    />
+                    <span className="capitalize">{opt}</span>
+                </label>
+            ))}
+        </fieldset>
+
+        <fieldset className="rounded border border-ink/20 bg-white p-3">
+            <legend className="px-1 text-sm font-medium">I want to try - workout style</legend>
+
+            <label className="flex items-center gap-2 py-1">
+                <input
+                    type="checkbox"
+                    checked={prefStyles.length === 0}
+                    onChange={() => setPrefStyles([])}
+                    className="accent-flame"
+                />
+                <span>No preference</span>
+            </label>
+
+            {STYLE_OPTS.map((opt) => (
+                <label key={opt} className="flex items-center gap-2 py-1">
+                    <input
+                        type="checkbox"
+                        checked={prefStyles.includes(opt)}
+                        onChange={() => toggleInArray(setPrefStyles, opt)}
+                        className="accent-flame"
+                    />
+                    <span className="capitalize">{opt}</span>
+                </label>
+            ))}
+        </fieldset>
+        
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <button

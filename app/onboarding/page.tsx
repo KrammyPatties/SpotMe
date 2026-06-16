@@ -27,7 +27,7 @@ export default async function OnboardingPage() {
   // Load gyms for the picker.
   const { data: gyms } = await supabaseAdmin
     .from("gyms")
-    .select("id, name, outlet, region")
+    .select("id, name, chain, postal_code")
     .order("name");
 
   return (

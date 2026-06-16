@@ -96,3 +96,28 @@ create table matches (
   check (initiator_id <> recipient_id),                     -- can't match yourself
   unique (initiator_id, recipient_id)                       -- one request per direction
 );
+
+-- feat: real Singapore gym data with coordinates (replaces placeholder seed)
+
+drop table if exists gyms cascade;
+
+create table gyms (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  chain        text not null,
+  postal_code  text not null,                               -- text, NOT int: preserves leading zeros (e.g. 098803)
+  latitude     double precision,                            -- filled by seed script via OneMap; null until geocoded
+  longitude    double precision,
+  created_at   timestamptz not null default now(),
+  unique (name, postal_code)                                -- a gym is identified by name + where it is
+);
+
+delete from gyms
+where latitude is null;
+
+-- feat: add match preferences to profiles
+-- Empty array = no preference (accept all). Reuses existing enums as arrays.
+alter table profiles
+  add column preferred_experience experience_level[]   not null default '{}',
+  add column preferred_gender     gender_type[]         not null default '{}',
+  add column preferred_styles     workout_style_type[]  not null default '{}';
