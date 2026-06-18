@@ -125,3 +125,37 @@ where gym_id not in (select id from gyms);
 alter table user_gyms
   add constraint user_gyms_gym_id_fkey
   foreign key (gym_id) references gyms(id) on delete cascade;
+
+
+-- Chatroom and Messaging
+ 
+-- Conversation, NULL if 1-1 convo, else name provided
+create table if not exists chatrooms (
+  id          uuid primary key default gen_random_uuid(),
+  name        text,
+  created_at  timestamptz not null default now()
+);
+ 
+-- Which users are in which chatroom
+create table if not exists chatroom_members (
+  chatroom_id   uuid not null references chatrooms(id) on delete cascade,
+  clerk_user_id text not null references profiles(clerk_user_id) on delete cascade,
+  joined_at     timestamptz not null default now(),
+  primary key (chatroom_id, clerk_user_id)
+);
+ 
+-- Individual messages, each belonging to one chatroom
+create table if not exists messages (
+  id          uuid primary key default gen_random_uuid(),
+  chatroom_id uuid not null references chatrooms(id) on delete cascade,
+  sender_id   text not null references profiles(clerk_user_id) on delete cascade,
+  content     text not null check (char_length(content) between 1 and 2000),
+  created_at  timestamptz not null default now()
+);
+ 
+create index if not exists idx_messages_chatroom_created
+  on messages (chatroom_id, created_at);
+create index if not exists idx_chatroom_members_user
+  on chatroom_members (clerk_user_id);
+
+alter publication supabase_realtime add table messages;
