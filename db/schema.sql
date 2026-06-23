@@ -159,3 +159,8 @@ create index if not exists idx_chatroom_members_user
   on chatroom_members (clerk_user_id);
 
 alter publication supabase_realtime add table messages;
+
+-- feat: profile photos (stored in private Supabase Storage bucket)
+-- Stores the storage PATH, not a URL -since signed view URLs are generated on demand
+-- (they expire). Nullable: users without a photo get a placeholder avatar.
+alter table profiles add column photo_path text;
