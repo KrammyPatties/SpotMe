@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIMES = ["morning", "afternoon", "evening"] as const;
 const EXPERIENCE_OPTS = ["beginner", "intermediate", "advanced"];
 const GENDER_OPTS = ["male", "female", "non-binary"];
 const STYLE_OPTS = ["powerlifting", "bodybuilding", "hiit", "calisthenics", "crossfit", "general"];
-
 
 type Gym = { id: string; name: string; chain: string; postal_code: string };
 
@@ -24,6 +24,7 @@ type InitialData = {
   preferred_experience?: string[];
   preferred_gender?: string[];
   preferred_styles?: string[];
+  photo_url?: string | null;
 };
  
 export function OnboardingForm({
@@ -49,6 +50,10 @@ export function OnboardingForm({
   const [prefExperience, setPrefExperience] = useState<string[]>(initial?.preferred_experience ?? []);
   const [prefGender, setPrefGender] = useState<string[]>(initial?.preferred_gender ?? []);
   const [prefStyles, setPrefStyles] = useState<string[]>(initial?.preferred_styles ?? []);
+
+  const [photoPreview, setPhotoPreview] = useState<string | null>(initial?.photo_url ?? null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   
   function toggleGym(id: string) {
     setGymIds((prev) =>
@@ -76,6 +81,55 @@ function toggleInArray(
   setter((prev) =>
     prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
   );
+}
+
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  setPhotoError(null);
+
+  // Client-side validation (the real gatekeeper; bucket is a backstop).
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    setPhotoError("Please choose a JPEG, PNG, WebP, or HEIC image.");
+    return;
+  }
+  if (file.size > MAX_BYTES) {
+    setPhotoError("Image must be under 5 MB.");
+    return;
+  }
+
+  setPhotoUploading(true);
+  try {
+    // Step 1: ask our server for a scoped upload URL
+    const urlRes = await fetch("/api/profile/photo-upload-url", { method: "POST" });
+    if (!urlRes.ok) throw new Error("Could not start upload.");
+    const { path, token } = await urlRes.json();
+
+    // Step 2: upload the file directly to Supabase (bypasses our server)
+    const { error: uploadErr } = await supabaseBrowser.storage
+      .from("profile-photos")
+      .uploadToSignedUrl(path, token, file);
+    if (uploadErr) throw new Error(uploadErr.message);
+
+    // Step 3: tell our server to save the path on the profile
+    const saveRes = await fetch("/api/profile/photo-save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!saveRes.ok) throw new Error("Could not save photo.");
+
+    // Show a local preview immediately
+    setPhotoPreview(URL.createObjectURL(file));
+  } catch (err) {
+    setPhotoError(err instanceof Error ? err.message : "Upload failed.");
+  } finally {
+    setPhotoUploading(false);
+  }
 }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -144,6 +198,46 @@ function toggleInArray(
             className="rounded border border-ink/20 bg-white px-3 py-2 focus:border-flame focus:outline-none"
             />
         </label>
+
+        <div className="grid gap-1">
+            <span className="text-sm font-medium">Profile photo</span>
+
+            {photoPreview && (
+                <img
+                    src={photoPreview}
+                    alt="Preview"
+                    className="mb-2 h-32 w-32 rounded-full object-cover"
+                />
+            )}
+
+            <label
+                className={`inline-block w-fit cursor-pointer rounded border border-flame px-4 py-2 text-sm font-medium text-flame hover:bg-flame hover:text-cream ${
+                    photoUploading ? "pointer-events-none opacity-50" : ""
+                }`}
+            >
+                {photoPreview ? "Change photo" : "Upload photo"}
+                <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoChange}
+                    disabled={photoUploading}
+                    style={{
+                        position: "absolute",
+                        width: "1px",
+                        height: "1px",
+                        padding: 0,
+                        margin: "-1px",
+                        overflow: "hidden",
+                        clip: "rect(0,0,0,0)",
+                        whiteSpace: "nowrap",
+                        border: 0,
+                    }}
+                />
+            </label>
+
+            {photoUploading && <span className="text-sm text-ink/60">Uploading…</span>}
+            {photoError && <span className="text-sm text-red-600">{photoError}</span>}
+        </div>
 
         <label className="grid gap-1">
             <span className="text-sm font-medium">Experience</span>

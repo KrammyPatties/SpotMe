@@ -1,7 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { OnboardingForm } from "@/app/onboarding/onboarding-form";
+import { OnboardingForm } from "../onboarding/onboarding-form";
+import { getPhotoUrl } from "@/lib/photos";
 import Link from "next/link";
 
 export default async function ProfilePage() {
@@ -38,6 +39,8 @@ export default async function ProfilePage() {
     time: row.time_of_day,
   }));
 
+  const photoUrl = await getPhotoUrl(profile.photo_path);
+
   return (
     <main className="mx-auto max-w-lg px-4 py-10">
       <h1 className="text-3xl font-bold">Your profile</h1>
@@ -57,6 +60,7 @@ export default async function ProfilePage() {
           preferred_experience: profile.preferred_experience ?? [],
           preferred_gender: profile.preferred_gender ?? [],
           preferred_styles: profile.preferred_styles ?? [],
+          photo_url: photoUrl
         }}
       />
 
