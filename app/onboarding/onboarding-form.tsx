@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import Cropper from "react-easy-crop";
+import { getCroppedBlob } from "@/lib/cropImage";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const TIMES = ["morning", "afternoon", "evening"] as const;
@@ -54,16 +56,27 @@ export function OnboardingForm({
   const [photoPreview, setPhotoPreview] = useState<string | null>(initial?.photo_url ?? null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
-  
-  function toggleGym(id: string) {
-    setGymIds((prev) =>
-      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
-    );
-  }
-  
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [slots, setSlots] = useState<{ day: number; time: string }[]>(
     initial?.availability ?? [],
-);
+  );
+
+  useEffect(() => {
+    setSaved(false);
+  }, [
+    displayName, age, experience, gender, bio,
+    gymIds, workoutStyle, slots,
+    prefExperience, prefGender, prefStyles, photoPreview,
+  ]);
+  
+function toggleGym(id: string) {
+  setGymIds((prev) =>
+    prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
+  );
+}
 
 function toggleSlot(day: number, time: string) {
   setSlots((prev) => {
@@ -86,13 +99,11 @@ function toggleInArray(
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
-async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
   const file = e.target.files?.[0];
   if (!file) return;
-
   setPhotoError(null);
 
-  // Client-side validation (the real gatekeeper; bucket is a backstop).
   if (!ALLOWED_TYPES.includes(file.type)) {
     setPhotoError("Please choose a JPEG, PNG, WebP, or HEIC image.");
     return;
@@ -102,20 +113,30 @@ async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     return;
   }
 
+  setCropSrc(URL.createObjectURL(file));
+}
+
+function onCropComplete(_: any, areaPixels: any) {
+  setCroppedAreaPixels(areaPixels);
+}
+
+async function handleCropConfirm() {
+  if (!cropSrc || !croppedAreaPixels) return;
   setPhotoUploading(true);
+  setCropSrc(null);
+
   try {
-    // Step 1: ask our server for a scoped upload URL
+    const blob = await getCroppedBlob(cropSrc, croppedAreaPixels);
+
     const urlRes = await fetch("/api/profile/photo-upload-url", { method: "POST" });
     if (!urlRes.ok) throw new Error("Could not start upload.");
     const { path, token } = await urlRes.json();
 
-    // Step 2: upload the file directly to Supabase (bypasses our server)
     const { error: uploadErr } = await supabaseBrowser.storage
       .from("profile-photos")
-      .uploadToSignedUrl(path, token, file);
+      .uploadToSignedUrl(path, token, blob, { contentType: "image/jpeg" });
     if (uploadErr) throw new Error(uploadErr.message);
 
-    // Step 3: tell our server to save the path on the profile
     const saveRes = await fetch("/api/profile/photo-save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -123,8 +144,7 @@ async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     });
     if (!saveRes.ok) throw new Error("Could not save photo.");
 
-    // Show a local preview immediately
-    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoPreview(URL.createObjectURL(blob));
   } catch (err) {
     setPhotoError(err instanceof Error ? err.message : "Upload failed.");
   } finally {
@@ -206,7 +226,7 @@ async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
                 <img
                     src={photoPreview}
                     alt="Preview"
-                    className="mb-2 h-32 w-32 rounded-full object-cover"
+                    className="mb-2 h-48 w-36 rounded-lg object-cover"
                 />
             )}
 
@@ -468,6 +488,47 @@ async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
         >
             {saving ? "Saving…" : saved ? "Saved!" : initial ? "Edit profile" : "Create profile"}
         </button>
+
+        {cropSrc && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/80 p-4">
+            <div className="relative flex-1">
+            <Cropper
+                image={cropSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={3 / 4}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+            />
+            </div>
+            <div className="mt-4 flex items-center justify-center gap-4">
+            <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.1}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                className="w-48"
+            />
+            <button
+                type="button"
+                onClick={() => setCropSrc(null)}
+                className="rounded border border-cream px-4 py-2 text-cream"
+            >
+                Cancel
+            </button>
+            <button
+                type="button"
+                onClick={handleCropConfirm}
+                className="rounded bg-flame px-4 py-2 font-semibold text-cream"
+            >
+                Confirm
+            </button>
+            </div>
+        </div>
+        )}
     </form>
   );
 }
