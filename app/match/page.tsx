@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { getCandidates } from "@/lib/supabase/candidates";
+import { getCandidates, getIncomingRequests } from "@/lib/supabase/candidates";
 import { rankCandidates, type ScoringUser } from "@/lib/matching";
 import { getPhotoUrls } from "@/lib/photos";
 import { MatchFeed } from "./match-feed";
@@ -70,10 +70,24 @@ export default async function MatchPage() {
     photoUrl: r.candidate.photo_path ? photoMap.get(r.candidate.photo_path) ?? null : null,
   }));
 
+  // 4. Incoming pending requests (people who liked you), with signed photos.
+  const requests = await getIncomingRequests(userId);
+  const reqPhotoPaths = requests
+    .map((r) => r.requester!.photo_path)
+    .filter((p): p is string => !!p);
+  const reqPhotoMap = await getPhotoUrls(reqPhotoPaths);
+
+  const requestCards = requests.map((r) => ({
+    matchId: r.matchId,
+    requester: r.requester!,
+    photoUrl: r.requester!.photo_path ? reqPhotoMap.get(r.requester!.photo_path) ?? null : null,
+  }));
+
+
   return (
     <main className="mx-auto max-w-md px-4 py-8">
       <h1 className="mb-4 text-2xl font-bold">Find a match</h1>
-      <MatchFeed cards={cards} />
+      <MatchFeed cards={cards} requestCards={requestCards} />
     </main>
   );
 }
