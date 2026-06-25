@@ -11,7 +11,8 @@ export async function POST(req: Request) {
 
   // Read the submitted fields.
   const body = await req.json();
-  const { display_name, age, experience, gender, bio, gym_ids, workout_style, availability, preferred_experience, preferred_gender, preferred_styles } = body;
+  const { display_name, age, experience, gender, bio, gym_ids, workout_style, 
+    availability, preferred_experience, preferred_gender, preferred_styles, match_radius_km } = body;
 
   if (!display_name || typeof display_name !== "string") {
     return NextResponse.json({ error: "Display name is required" }, { status: 400 });
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
 		preferred_experience: preferred_experience ?? [],
     preferred_gender: preferred_gender ?? [],
     preferred_styles: preferred_styles ?? [],
+    match_radius_km: match_radius_km ?? 5,
     updated_at: new Date().toISOString(),
   });
 

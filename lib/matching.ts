@@ -41,34 +41,74 @@ export function scoreAvailability(user: ScoringUser, candidate: Candidate): numb
 }
 
 /**
- * Shared-gym score (0–1), binary: 1 if the user and candidate share at least
- * one gym, else 0.
+ * Gym compatibility (0-1):
+ *   - share a home gym                              -> 1
+ *   - else: nearest COMMON ActiveSG within radius   -> linear falloff, capped 0.75
+ *   - else                                          -> 0
  *
- * Binary (not scaled) because the product meaning is "is there a place we'll
- * both be" -q one shared gym fully satisfies that; a second adds no real value.
- * Score-0 cases (no shared gym) are where the distance fallback activates.
- *
- * Returns 0 if either side has no gyms.
+ * "Common ActiveSG" = an ActiveSG gym within radiusKm of BOTH people's nearest
+ * home gym. We pick the one minimising the WORSE of the two distances (so
+ * neither person is left far), and fall off linearly with that worst distance.
+ * Capped at 0.75 so a real shared home gym (1) always ranks higher.
  */
 
-export function scoreSharedGym(user: ScoringUser, candidate: Candidate): number {
-  if (user.gyms.length === 0 || candidate.gyms.length === 0) {
-    return 0;
+/** Result of gym scoring: the score, plus the common ActiveSG gym name if
+ *  proximity (not a shared home gym) is what produced the score. */
+export type GymScore = { score: number; sharedActiveSg: string | null };
+
+export function scoreSharedGym(
+  user: ScoringUser,
+  candidate: Candidate,
+  ctx: ScoringContext,
+): GymScore {
+  // 1. Shared home gym -> perfect (no ActiveSG anchor needed)
+  if (user.gyms.length > 0 && candidate.gyms.length > 0) {
+    const candidateGymIds = new Set(candidate.gyms.map((g) => g.id));
+    if (user.gyms.some((g) => candidateGymIds.has(g.id))) {
+      return { score: 1, sharedActiveSg: null };
+    }
   }
 
-  const candidateGymIds = new Set(candidate.gyms.map((g) => g.id));
-  const sharesAGym = user.gyms.some((g) => candidateGymIds.has(g.id));
+  // 2. ActiveSG fallback
+  const userAnchors = user.gyms.filter((g) => g.latitude != null && g.longitude != null);
+  const candAnchors = candidate.gyms.filter((g) => g.latitude != null && g.longitude != null);
+  if (userAnchors.length === 0 || candAnchors.length === 0 || ctx.activeSgGyms.length === 0) {
+    return { score: 0, sharedActiveSg: null };
+  }
 
-  return sharesAGym ? 1 : 0;
+  let bestWorstDistance = Infinity;
+  let bestGymName: string | null = null;
+  for (const asg of ctx.activeSgGyms) {
+    if (asg.latitude == null || asg.longitude == null) continue;
+    const dUser = Math.min(...userAnchors.map((a) =>
+      haversineKm(a.latitude!, a.longitude!, asg.latitude!, asg.longitude!)));
+    const dCand = Math.min(...candAnchors.map((a) =>
+      haversineKm(a.latitude!, a.longitude!, asg.latitude!, asg.longitude!)));
+    const worst = Math.max(dUser, dCand);
+    if (worst < bestWorstDistance) {
+      bestWorstDistance = worst;
+      bestGymName = asg.name;          // remember which gym
+    }
+  }
+
+  if (bestWorstDistance > ctx.radiusKm) return { score: 0, sharedActiveSg: null };
+  const falloff = 1 - bestWorstDistance / ctx.radiusKm;
+  return { score: Math.min(falloff, 0.75), sharedActiveSg: bestGymName };
 }
+
+/** Extra context the gym scorer needs beyond the two people being compared. */
+export type ScoringContext = {
+  activeSgGyms: Candidate["gyms"];  // all ActiveSG gyms with coordinates
+  radiusKm: number;                 // the user's match_radius_km
+};
 
 /**
  * Workout-style score (0–1, moderate tier):
- *   - both have the same real style        → 1   (strong shared signal)
- *   - either is null or 'no_preference'     → 0.5 (unknown / flexible: neutral)
- *   - both real but different               → 0   (genuine mismatch)
+ *   - both have the same real style        -> 1   (strong shared signal)
+ *   - either is null or 'no_preference'     -> 0.5 (unknown / flexible: neutral)
+ *   - both real but different               -> 0   (genuine mismatch)
  *
- * 'no_preference' / null means "open to anyone" — better than a mismatch, but
+ * 'no_preference' / null means "open to anyone" - better than a mismatch, but
  * not the strong positive of two people who specifically share a style.
  */
 export function scoreWorkoutStyle(user: ScoringUser, candidate: Candidate): number {
@@ -156,16 +196,19 @@ export type ScoredCandidate = {
     experiencePref: number;
     genderPref: number;
   };
+  sharedActiveSg: string | null;
 };
 
 /**
  * Scores one candidate against the user across all signals, returning the
  * candidate, a weighted total (0-1), and a per-signal breakdown.
  */
-export function scoreCandidate(user: ScoringUser, candidate: Candidate): ScoredCandidate {
+export function scoreCandidate(user: ScoringUser, candidate: Candidate, ctx: ScoringContext): ScoredCandidate {
+  const gym = scoreSharedGym(user, candidate, ctx);   // { score, sharedActiveSg }
+
   const breakdown = {
     availability: scoreAvailability(user, candidate),
-    sharedGym: scoreSharedGym(user, candidate),
+    sharedGym: gym.score,                              // ← use .score
     workoutStyle: scoreWorkoutStyle(user, candidate),
     experiencePref: scoreExperiencePref(user, candidate),
     genderPref: scoreGenderPref(user, candidate),
@@ -178,7 +221,7 @@ export function scoreCandidate(user: ScoringUser, candidate: Candidate): ScoredC
     breakdown.experiencePref * WEIGHTS.experiencePref +
     breakdown.genderPref * WEIGHTS.genderPref;
 
-  return { candidate, score, breakdown };
+  return { candidate, score, breakdown, sharedActiveSg: gym.sharedActiveSg };  // ← carry it through
 }
 
 /**
@@ -188,9 +231,10 @@ export function scoreCandidate(user: ScoringUser, candidate: Candidate): ScoredC
 export function rankCandidates(
   user: ScoringUser,
   candidates: Candidate[],
+  ctx: ScoringContext,
 ): ScoredCandidate[] {
   return candidates
-    .map((candidate) => scoreCandidate(user, candidate))
+    .map((candidate) => scoreCandidate(user, candidate, ctx))
     .sort((a, b) => b.score - a.score); // descending: highest score first
 }
 

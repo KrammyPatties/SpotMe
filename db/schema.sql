@@ -164,3 +164,6 @@ alter publication supabase_realtime add table messages;
 -- Stores the storage PATH, not a URL -since signed view URLs are generated on demand
 -- (they expire). Nullable: users without a photo get a placeholder avatar.
 alter table profiles add column photo_path text;
+
+-- feat: match radius (in km) for distance-based filtering
+alter table profiles add column match_radius_km int not null default 5;
