@@ -28,6 +28,8 @@ function makeUser(overrides: Partial<ScoringUser> = {}): ScoringUser {
     preferred_experience: [],
     preferred_gender: [],
     preferred_styles: [],
+    photo_path: null,
+    match_radius_km: 5,
     ...overrides,
   };
 }
@@ -43,6 +45,9 @@ function geoGym(
 ): Candidate["gyms"][number] {
   return { id, name: id, chain, latitude: lat, longitude: lng };
 }
+
+// Extra context the gym scorer needs beyond the two people being compared
+const noCtx = { activeSgGyms: [], radiusKm: 10 };
 
 // Tests for scoreAvailability function
 describe("scoreAvailability", () => {
@@ -92,31 +97,31 @@ describe("scoreSharedGym", () => {
   it("returns 1 when they share one gym", () => {
     const user = makeUser({ gyms: [gym("a")] });
     const candidate = makeUser({ gyms: [gym("a")] });
-    expect(scoreSharedGym(user, candidate)).toBe(1);
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(1);
   });
 
   it("returns 1 when they share at least one gym (binary, extra don't matter)", () => {
     const user = makeUser({ gyms: [gym("a"), gym("b")] });
     const candidate = makeUser({ gyms: [gym("b"), gym("c")] });
-    expect(scoreSharedGym(user, candidate)).toBe(1);
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(1);
   });
 
   it("returns 0 when they share no gyms", () => {
     const user = makeUser({ gyms: [gym("a")] });
     const candidate = makeUser({ gyms: [gym("b")] });
-    expect(scoreSharedGym(user, candidate)).toBe(0);
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(0);
   });
 
   it("returns 0 when the user has no gyms", () => {
     const user = makeUser({ gyms: [] });
     const candidate = makeUser({ gyms: [gym("a")] });
-    expect(scoreSharedGym(user, candidate)).toBe(0);
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(0);
   });
 
   it("returns 0 when the candidate has no gyms", () => {
     const user = makeUser({ gyms: [gym("a")] });
     const candidate = makeUser({ gyms: [] });
-    expect(scoreSharedGym(user, candidate)).toBe(0);
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(0);
   });
 });
 
@@ -239,7 +244,7 @@ describe("scoreCandidate", () => {
   it("returns a breakdown with all five signals", () => {
     const user = makeUser();
     const candidate = makeUser();
-    const result = scoreCandidate(user, candidate);
+    const result = scoreCandidate(user, candidate, noCtx);
     expect(result.breakdown).toHaveProperty("availability");
     expect(result.breakdown).toHaveProperty("sharedGym");
     expect(result.breakdown).toHaveProperty("workoutStyle");
@@ -250,7 +255,7 @@ describe("scoreCandidate", () => {
   it("includes the candidate in the result", () => {
     const user = makeUser();
     const candidate = makeUser({ display_name: "Alice" });
-    expect(scoreCandidate(user, candidate).candidate.display_name).toBe("Alice");
+    expect(scoreCandidate(user, candidate, noCtx).candidate.display_name).toBe("Alice");
   });
 
   it("scores a perfect match higher than a poor one", () => {
@@ -275,15 +280,15 @@ describe("scoreCandidate", () => {
       experience: "beginner",
       gender: "male",
     });
-    expect(scoreCandidate(user, perfect).score).toBeGreaterThan(
-      scoreCandidate(user, poor).score,
+    expect(scoreCandidate(user, perfect, noCtx).score).toBeGreaterThan(
+      scoreCandidate(user, poor, noCtx).score,
     );
   });
 
   it("gives a total score between 0 and 1", () => {
     const user = makeUser({ availability: [{ day: 1, time: "evening" }], gyms: [gym("a")] });
     const candidate = makeUser({ availability: [{ day: 1, time: "evening" }], gyms: [gym("a")] });
-    const score = scoreCandidate(user, candidate).score;
+    const score = scoreCandidate(user, candidate, noCtx).score;
     expect(score).toBeGreaterThanOrEqual(0);
     expect(score).toBeLessThanOrEqual(1);
   });
@@ -303,7 +308,7 @@ describe("scoreCandidate", () => {
       experience: "advanced",
       gender: "female",
     });
-    expect(scoreCandidate(user, perfect).score).toBeCloseTo(1, 5);
+    expect(scoreCandidate(user, perfect, noCtx).score).toBeCloseTo(1, 5);
   });
 });
 
@@ -325,20 +330,19 @@ describe("rankCandidates", () => {
       gyms: [gym("z")],
     });
 
-    // pass them in worst-first to prove it sorts
-    const ranked = rankCandidates(user, [weak, strong]);
+    const ranked = rankCandidates(user, [weak, strong], noCtx);
     expect(ranked[0].candidate.display_name).toBe("Strong");
     expect(ranked[1].candidate.display_name).toBe("Weak");
   });
 
   it("returns one ScoredCandidate per input candidate", () => {
     const user = makeUser();
-    const ranked = rankCandidates(user, [makeUser(), makeUser(), makeUser()]);
+    const ranked = rankCandidates(user, [makeUser(), makeUser(), makeUser()], noCtx);
     expect(ranked).toHaveLength(3);
   });
 
   it("returns an empty array for an empty candidate list", () => {
-    const ranked = rankCandidates(makeUser(), []);
+    const ranked = rankCandidates(makeUser(), [], noCtx);
     expect(ranked).toEqual([]);
   });
 
@@ -348,7 +352,7 @@ describe("rankCandidates", () => {
       makeUser({ gyms: [gym("a")] }),
       makeUser({ gyms: [gym("z")] }),
       makeUser({ gyms: [gym("a")] }),
-    ]);
+    ], noCtx);
     for (let i = 1; i < ranked.length; i++) {
       expect(ranked[i - 1].score).toBeGreaterThanOrEqual(ranked[i].score);
     }
@@ -392,5 +396,72 @@ describe("gymsInRange", () => {
   it("skips gyms missing coordinates", () => {
     const all = [{ id: "nocoord", name: "X", chain: "ActiveSG", latitude: null, longitude: null }];
     expect(gymsInRange(userGyms, all, 10)).toEqual([]);
+  });
+});
+
+// Tests for scoreSharedGym with ActiveSG fallback
+describe("scoreSharedGym (with ActiveSG fallback)", () => {
+  const noCtx = { activeSgGyms: [], radiusKm: 10 };
+
+  it("returns 1 when they share a home gym (regardless of ActiveSG)", () => {
+    const user = makeUser({ gyms: [gym("a")] });
+    const candidate = makeUser({ gyms: [gym("a")] });
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(1);
+  });
+
+  it("returns 0 when no shared gym and no ActiveSG gyms available", () => {
+    const user = makeUser({ gyms: [gym("a")] });
+    const candidate = makeUser({ gyms: [gym("b")] });
+    expect(scoreSharedGym(user, candidate, noCtx).score).toBe(0);
+  });
+
+  it("scores ActiveSG proximity when no shared home gym (closer = higher)", () => {
+    // user home near (1.35, 103.85), candidate home near (1.36, 103.86)
+    const user = makeUser({ gyms: [geoGym("uhome", "Anytime Fitness", 1.35, 103.85)] });
+    const candidate = makeUser({ gyms: [geoGym("chome", "Fitness First", 1.36, 103.86)] });
+
+    const ctx = {
+      radiusKm: 10,
+      activeSgGyms: [geoGym("asg-near", "ActiveSG", 1.355, 103.855)], // between them
+    };
+
+    const score = scoreSharedGym(user, candidate, ctx).score;
+    expect(score).toBeGreaterThan(0);
+    expect(score).toBeLessThanOrEqual(0.75); // capped below a real shared gym
+  });
+
+  it("returns 0 when the only common ActiveSG is beyond the radius", () => {
+    const user = makeUser({ gyms: [geoGym("uhome", "Anytime Fitness", 1.35, 103.85)] });
+    const candidate = makeUser({ gyms: [geoGym("chome", "Fitness First", 1.36, 103.86)] });
+    const ctx = {
+      radiusKm: 1, // tight radius
+      activeSgGyms: [geoGym("asg-far", "ActiveSG", 1.50, 104.00)], // way out
+    };
+    expect(scoreSharedGym(user, candidate, ctx).score).toBe(0);
+  });
+
+  it("a closer common ActiveSG scores higher than a farther one", () => {
+    const user = makeUser({ gyms: [geoGym("uhome", "Anytime Fitness", 1.35, 103.85)] });
+    const candidate = makeUser({ gyms: [geoGym("chome", "Fitness First", 1.36, 103.86)] });
+
+    const near = scoreSharedGym(user, candidate, {
+      radiusKm: 20,
+      activeSgGyms: [geoGym("close", "ActiveSG", 1.355, 103.855)],
+    });
+    const far = scoreSharedGym(user, candidate, {
+      radiusKm: 20,
+      activeSgGyms: [geoGym("farish", "ActiveSG", 1.40, 103.90)],
+    });
+    expect(near.score).toBeGreaterThan(far.score);
+  });
+
+  it("reports the shared ActiveSG gym name when proximity matches", () => {
+  const user = makeUser({ gyms: [geoGym("uhome", "Anytime Fitness", 1.35, 103.85)] });
+  const candidate = makeUser({ gyms: [geoGym("chome", "Fitness First", 1.36, 103.86)] });
+  const result = scoreSharedGym(user, candidate, {
+    radiusKm: 10,
+    activeSgGyms: [geoGym("Sengkang ActiveSG", "ActiveSG", 1.355, 103.855)],
+  });
+  expect(result.sharedActiveSg).toBe("Sengkang ActiveSG");
   });
 });

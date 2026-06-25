@@ -9,6 +9,8 @@ export type Candidate = {
   gender: string | null;
   bio: string | null;
   workout_style: string | null;
+  photo_path: string | null;
+  match_radius_km: number;
   gyms: { id: string; name: string; chain: string; latitude: number | null; longitude: number | null }[];
   availability: { day: number; time: string }[];
 };
@@ -33,7 +35,7 @@ export async function getCandidates(userId: string): Promise<Candidate[]> {
   // 2. Fetch the eligible profiles (flat, no joins).
   const { data: profiles, error: profErr } = await supabaseAdmin
     .from("profiles")
-    .select("clerk_user_id, display_name, age, experience, gender, bio, workout_style")
+    .select("clerk_user_id, display_name, age, experience, gender, bio, workout_style, photo_path, match_radius_km")
     .not("clerk_user_id", "in", `(${[...excludedIds].join(",")})`);
 
   if (profErr) throw new Error(`Failed to load candidates: ${profErr.message}`);
@@ -82,6 +84,8 @@ export async function getCandidates(userId: string): Promise<Candidate[]> {
     gender: p.gender,
     bio: p.bio,
     workout_style: p.workout_style,
+    photo_path: p.photo_path,
+    match_radius_km: p.match_radius_km,
     gyms: gymsByUser.get(p.clerk_user_id) ?? [],
     availability: availByUser.get(p.clerk_user_id) ?? [],
   }));

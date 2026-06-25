@@ -27,6 +27,7 @@ type InitialData = {
   preferred_gender?: string[];
   preferred_styles?: string[];
   photo_url?: string | null;
+  match_radius_km?: number;
 };
  
 export function OnboardingForm({
@@ -52,6 +53,7 @@ export function OnboardingForm({
   const [prefExperience, setPrefExperience] = useState<string[]>(initial?.preferred_experience ?? []);
   const [prefGender, setPrefGender] = useState<string[]>(initial?.preferred_gender ?? []);
   const [prefStyles, setPrefStyles] = useState<string[]>(initial?.preferred_styles ?? []);
+  const [matchRadius, setMatchRadius] = useState(initial?.match_radius_km ?? 5);
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(initial?.photo_url ?? null);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -70,6 +72,7 @@ export function OnboardingForm({
     displayName, age, experience, gender, bio,
     gymIds, workoutStyle, slots,
     prefExperience, prefGender, prefStyles, photoPreview,
+    matchRadius,
   ]);
   
 function toggleGym(id: string) {
@@ -172,6 +175,7 @@ async function handleCropConfirm() {
         availability: slots,
         preferred_experience: prefExperience,
         preferred_gender: prefGender,
+        match_radius_km: matchRadius,
         preferred_styles: prefStyles,
     }) });
 
@@ -452,6 +456,24 @@ async function handleCropConfirm() {
                 </label>
             ))}
         </fieldset>
+
+        <label className="grid gap-1">
+            <span className="text-sm font-medium">
+                Match distance: {matchRadius} km
+            </span>
+            <input
+                type="range"
+                min={0}
+                max={30}
+                step={1}
+                value={matchRadius}
+                onChange={(e) => setMatchRadius(Number(e.target.value))}
+                className="accent-flame"
+            />
+            <span className="text-xs text-ink/60">
+                How far to look for a shared ActiveSG gym when you don't share a home gym.
+            </span>
+        </label>
 
         <fieldset className="rounded border border-ink/20 bg-white p-3">
             <legend className="px-1 text-sm font-medium">I want to try - workout style</legend>

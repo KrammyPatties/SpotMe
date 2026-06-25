@@ -60,7 +60,8 @@ export default async function ProfilePage() {
           preferred_experience: profile.preferred_experience ?? [],
           preferred_gender: profile.preferred_gender ?? [],
           preferred_styles: profile.preferred_styles ?? [],
-          photo_url: photoUrl
+          photo_url: photoUrl,
+          match_radius_km: profile.match_radius_km ?? 5
         }}
       />
 
