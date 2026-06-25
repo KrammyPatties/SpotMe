@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { isChatroomMember } from "@/lib/chat";
+import { isChatroomMember, getChatroomLabel } from "@/lib/chat";
 import ChatWindow from "./chat-window";
 
 // Server component: authenticates, authorises and loads history
@@ -33,11 +33,14 @@ export default async function ChatroomPage({
     console.error("history load failed:", error);
   }
 
+  const label = await getChatroomLabel(chatroomId, userId);
+
   return (
     <ChatWindow
       chatroomId={chatroomId}
       currentUserId={userId}
       initialMessages={messages ?? []}
+      label={label}
     />
   );
 }
