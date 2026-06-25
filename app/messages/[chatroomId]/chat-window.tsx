@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -16,10 +17,12 @@ export default function ChatWindow({
   chatroomId,
   currentUserId,
   initialMessages,
+  label,
 }: {
   chatroomId: string;
   currentUserId: string;
   initialMessages: Message[];
+  label?: string;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
@@ -114,6 +117,18 @@ export default function ChatWindow({
 
   return (
     <div className="flex flex-col h-[80vh] max-w-2xl mx-auto">
+      <div className="flex items-center gap-3 p-3 border-b">
+        <Link
+          href="/messages"
+          aria-label="Back to messages"
+          className="flex items-center gap-1 text-ink/70 hover:text-flame shrink-0"
+        >
+          <span aria-hidden="true">←</span>
+          <span className="text-sm">Back</span>
+        </Link>
+        {label && <h1 className="font-semibold truncate">{label}</h1>}
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((m) => {
           const mine = m.sender_id === currentUserId;
