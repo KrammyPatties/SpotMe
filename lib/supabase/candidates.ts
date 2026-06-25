@@ -90,3 +90,33 @@ export async function getCandidates(userId: string): Promise<Candidate[]> {
     availability: availByUser.get(p.clerk_user_id) ?? [],
   }));
 }
+
+// Returns the list of pending match requests where `userId` is the recipient.
+export async function getIncomingRequests(userId: string) {
+  // Pending matches where I'm the recipient
+  const { data: matches } = await supabaseAdmin
+    .from("matches")
+    .select("id, initiator_id, created_at")
+    .eq("recipient_id", userId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (!matches || matches.length === 0) return [];
+
+  // Fetch the requesters' profiles (batched, same pattern as candidates)
+  const initiatorIds = matches.map((m) => m.initiator_id);
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name, age, experience, gender, bio, workout_style, photo_path")
+    .in("clerk_user_id", initiatorIds);
+
+  const profileById = new Map((profiles ?? []).map((p) => [p.clerk_user_id, p]));
+
+  return matches
+    .map((m) => ({
+      matchId: m.id,
+      requestedAt: m.created_at,
+      requester: profileById.get(m.initiator_id),
+    }))
+    .filter((r) => r.requester); // drop any orphaned
+}
