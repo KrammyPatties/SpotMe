@@ -182,3 +182,129 @@ export async function getConversationsForUser(
  
   return conversations;
 }
+
+/**
+ * Finds an existing 1:1 chatroom containing exactly the two given users
+ * or null if none exists. Used to prevent duplicate rooms for the same pair.
+ *
+ * Batched approach: get the rooms userA is in, get the rooms userB is in,
+ * intersect and keep only rooms whose member count is exactly 2.
+ */
+async function findDirectChatroom(
+  userA: string,
+  userB: string
+): Promise<string | null> {
+  const { data: aRooms } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("chatroom_id")
+    .eq("clerk_user_id", userA);
+ 
+  const { data: bRooms } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("chatroom_id")
+    .eq("clerk_user_id", userB);
+ 
+  const aSet = new Set((aRooms ?? []).map((r) => r.chatroom_id));
+  const shared = (bRooms ?? [])
+    .map((r) => r.chatroom_id)
+    .filter((id) => aSet.has(id));
+ 
+  if (shared.length === 0) return null;
+ 
+  // Of the rooms they share, find one with exactly 2 members.
+  const { data: counts } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("chatroom_id")
+    .in("chatroom_id", shared);
+ 
+  const sizeByRoom = new Map<string, number>();
+  for (const row of counts ?? []) {
+    sizeByRoom.set(row.chatroom_id, (sizeByRoom.get(row.chatroom_id) ?? 0) + 1);
+  }
+ 
+  for (const roomId of shared) {
+    if (sizeByRoom.get(roomId) === 2) return roomId;
+  }
+  return null;
+}
+ 
+/**
+ * Ensures a 1:1 chatroom exists for an accepted match, returning its id.
+ * Verifies the match is accepted and the caller is a participant before
+ * creating anything. Repeat calls return the same room.
+ */
+export async function getOrCreateChatroomForMatch(
+  matchId: string,
+  clerkUserId: string
+): Promise<string | null> {
+  const { data: match, error } = await supabaseAdmin
+    .from("matches")
+    .select("initiator_id, recipient_id, status")
+    .eq("id", matchId)
+    .maybeSingle();
+ 
+  if (error || !match) {
+    console.error("getOrCreateChatroomForMatch: match not found:", error);
+    return null;
+  }
+ 
+  // Authorisation: only a participant can spawn the room.
+  const participants = [match.initiator_id, match.recipient_id];
+  if (!participants.includes(clerkUserId)) return null;
+ 
+  if (match.status !== "accepted") return null;
+ 
+  // Reuse an existing 1:1 room for this pair if there is one.
+  const existing = await findDirectChatroom(
+    match.initiator_id,
+    match.recipient_id
+  );
+  if (existing) return existing;
+ 
+  // Create the room then add both members.
+  const { data: room, error: roomErr } = await supabaseAdmin
+    .from("chatrooms")
+    .insert({ name: null })
+    .select("id")
+    .single();
+ 
+  if (roomErr || !room) {
+    console.error("chatroom insert failed:", roomErr);
+    return null;
+  }
+ 
+  const { error: memErr } = await supabaseAdmin
+    .from("chatroom_members")
+    .insert([
+      { chatroom_id: room.id, clerk_user_id: match.initiator_id },
+      { chatroom_id: room.id, clerk_user_id: match.recipient_id },
+    ]);
+ 
+  if (memErr) {
+    console.error("chatroom_members insert failed:", memErr);
+    await supabaseAdmin.from("chatrooms").delete().eq("id", room.id);
+    return null;
+  }
+ 
+  return room.id;
+}
+ 
+/**
+ * For every accepted match the user is part of, ensure a chatroom exists.
+ */
+export async function ensureChatroomsForUser(clerkUserId: string): Promise<void> {
+  const { data: matches, error } = await supabaseAdmin
+    .from("matches")
+    .select("id, initiator_id, recipient_id, status")
+    .eq("status", "accepted")
+    .or(`initiator_id.eq.${clerkUserId},recipient_id.eq.${clerkUserId}`);
+ 
+  if (error) {
+    console.error("ensureChatroomsForUser: matches lookup failed:", error);
+    return;
+  }
+ 
+  for (const match of matches ?? []) {
+    await getOrCreateChatroomForMatch(match.id, clerkUserId);
+  }
+}

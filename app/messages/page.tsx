@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
-import { getConversationsForUser } from "@/lib/chat";
+import { getConversationsForUser, ensureChatroomsForUser } from "@/lib/chat";
 
 export default async function MessagesPage() {
   const { isAuthenticated, userId } = await auth();
   if (!isAuthenticated) redirect("/");
+
+  // Lazy creation: make sure every accepted match has a room before we list.
+  await ensureChatroomsForUser(userId);
 
   const conversations = await getConversationsForUser(userId);
 
