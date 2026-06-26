@@ -167,3 +167,31 @@ alter table profiles add column photo_path text;
 
 -- feat: match radius (in km) for distance-based filtering
 alter table profiles add column match_radius_km int not null default 5;
+
+-- workout_sessions: one row per training session (a "day's workout")
+create table workout_sessions (
+  id            uuid primary key default gen_random_uuid(),
+  clerk_user_id text not null references profiles(clerk_user_id) on delete cascade,
+  performed_on  date not null,
+  notes         text,
+  created_at    timestamptz not null default now()
+);
+
+-- workout_sets: one row per set, belonging to a session
+create table workout_sets (
+  id            uuid primary key default gen_random_uuid(),
+  session_id    uuid not null references workout_sessions(id) on delete cascade,
+  exercise_name text not null check (char_length(exercise_name) between 1 and 100),
+  set_index     int not null check (set_index >= 1),
+  reps          int not null check (reps between 1 and 1000),
+  weight_kg     numeric not null check (weight_kg >= 0),
+  created_at    timestamptz not null default now()
+);
+
+-- fast history loads, newest session first
+create index idx_workout_sessions_user_date
+  on workout_sessions (clerk_user_id, performed_on desc);
+
+-- fast set lookups when assembling a session's sets
+create index idx_workout_sets_session
+  on workout_sets (session_id);
