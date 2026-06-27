@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { isChatroomMember } from "@/lib/chat";
@@ -7,7 +7,7 @@ const MAX_CONTENT_LENGTH = 2000;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   // 1. Authentication.
   const { isAuthenticated, userId } = await auth();
   if (!isAuthenticated) {
