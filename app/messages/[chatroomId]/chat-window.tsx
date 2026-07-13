@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import AddToChat from "./add-to-chat";
 
 type Message = {
   id: string;
@@ -127,7 +128,10 @@ export default function ChatWindow({
           <span className="text-sm">Back</span>
         </Link>
         {label && <h1 className="font-semibold truncate">{label}</h1>}
-      </div>
+        <div className="ml-auto">
+          <AddToChat chatroomId={chatroomId} />
+        </div>
+        </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((m) => {

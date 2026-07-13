@@ -143,3 +143,25 @@ describe("POST /api/messages", () => {
     expect(json.message.sender_id).toBe(MEMBER_ID); // not NONMEMBER_ID
   });
 });
+
+it("401 add-member when signed out", async () => {
+  currentAuthRef.value = { isAuthenticated: false, userId: null };
+  const { POST: ADD } = await import("../members/route");
+  const res = await ADD(new Request("http://localhost/api/messages/members", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chatroom_id: roomId, target_id: "someone" }),
+  }));
+  expect(res.status).toBe(401);
+});
+
+it("403 when a non-member tries to add", async () => {
+  currentAuthRef.value = { isAuthenticated: true, userId: NONMEMBER_ID };
+  const { POST: ADD } = await import("../members/route");
+  const res = await ADD(new Request("http://localhost/api/messages/members", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chatroom_id: roomId, target_id: MEMBER_ID }),
+  }));
+  expect(res.status).toBe(403);
+});
