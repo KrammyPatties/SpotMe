@@ -308,3 +308,133 @@ export async function ensureChatroomsForUser(clerkUserId: string): Promise<void>
     await getOrCreateChatroomForMatch(match.id, clerkUserId);
   }
 }
+
+/**
+ * Returns the set of clerk_user_ids who are accepted matches of any of the
+ * given member ids. Used to decide who is eligible to be added to a room.
+ * The candidate must be an accepted match of at least one current member.
+ */
+async function acceptedMatchIdsForMembers(
+  memberIds: string[]
+): Promise<Set<string>> {
+  if (memberIds.length === 0) return new Set();
+
+  // Matches where a current member is on either side and status is accepted.
+  const orInitiator = `initiator_id.in.(${memberIds.join(",")})`;
+  const orRecipient = `recipient_id.in.(${memberIds.join(",")})`;
+
+  const { data, error } = await supabaseAdmin
+    .from("matches")
+    .select("initiator_id, recipient_id, status")
+    .eq("status", "accepted")
+    .or(`${orInitiator},${orRecipient}`);
+
+  if (error) {
+    console.error("acceptedMatchIdsForMembers failed:", error);
+    return new Set();
+  }
+
+  const memberSet = new Set(memberIds);
+  const eligible = new Set<string>();
+  for (const m of data ?? []) {
+    // The "other side" of each accepted match involving a member is eligible.
+    if (memberSet.has(m.initiator_id)) eligible.add(m.recipient_id);
+    if (memberSet.has(m.recipient_id)) eligible.add(m.initiator_id);
+  }
+  // Don't offer people already in the room.
+  for (const id of memberIds) eligible.delete(id);
+  return eligible;
+}
+
+/**
+ * The list of users the given member may add to the room: accepted matches of
+ * any current member, excluding people already in the room. Returns id + name.
+ */
+export async function getAddableUsers(
+  chatroomId: string,
+  requesterId: string
+): Promise<{ clerkUserId: string; displayName: string }[]> {
+  // Requester must be a member.
+  if (!(await isChatroomMember(chatroomId, requesterId))) return [];
+
+  const { data: members } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("clerk_user_id")
+    .eq("chatroom_id", chatroomId);
+
+  const memberIds = (members ?? []).map((m) => m.clerk_user_id);
+  const eligible = await acceptedMatchIdsForMembers(memberIds);
+  if (eligible.size === 0) return [];
+
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name")
+    .in("clerk_user_id", [...eligible]);
+
+  return (profiles ?? []).map((p) => ({
+    clerkUserId: p.clerk_user_id,
+    displayName: p.display_name ?? "Unknown user",
+  }));
+}
+
+/**
+ * Adds a user to a chatroom. Authorises only if the requester is a member and the
+ * target must be an accepted match of at least one current member. Promotes
+ * the room to a named group if it becomes >2 people and has no name yet.
+ * Returns true on success.
+ */
+export async function addMemberToChatroom(
+  chatroomId: string,
+  requesterId: string,
+  targetId: string
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!(await isChatroomMember(chatroomId, requesterId))) {
+    return { ok: false, reason: "requester not a member" };
+  }
+
+  if (await isChatroomMember(chatroomId, targetId)) {
+    return { ok: true };
+  }
+
+  const { data: members } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("clerk_user_id")
+    .eq("chatroom_id", chatroomId);
+  const memberIds = (members ?? []).map((m) => m.clerk_user_id);
+
+  const eligible = await acceptedMatchIdsForMembers(memberIds);
+  if (!eligible.has(targetId)) {
+    return { ok: false, reason: "target is not an accepted match of any member" };
+  }
+
+  const { error: insErr } = await supabaseAdmin
+    .from("chatroom_members")
+    .insert({
+      chatroom_id: chatroomId,
+      clerk_user_id: targetId,
+      added_by: requesterId,
+    });
+  if (insErr) {
+    console.error("addMemberToChatroom insert failed:", insErr);
+    return { ok: false, reason: "insert failed" };
+  }
+
+  // If the room is now a group >2 and unnamed, give it a default name so the
+  // list/header stop labelling it as a 1:1.
+  const newCount = memberIds.length + 1;
+  if (newCount > 2) {
+    const { data: room } = await supabaseAdmin
+      .from("chatrooms")
+      .select("name")
+      .eq("id", chatroomId)
+      .maybeSingle();
+    if (room && !room.name) {
+      await supabaseAdmin
+        .from("chatrooms")
+        .update({ name: "Group chat" })
+        .eq("id", chatroomId);
+    }
+  }
+
+  return { ok: true };
+}
