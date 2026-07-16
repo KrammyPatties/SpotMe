@@ -16,12 +16,7 @@ export default async function OnboardingPage() {
     .maybeSingle();
 
   if (existing) {
-    return (
-      <div style={{ padding: "2rem" }}>
-        <h1>You already have a profile ✅</h1>
-        <p>Your Clerk user ID: {userId}</p>
-      </div>
-    );
+    redirect("/match");
   }
 
   // Load gyms for the picker.

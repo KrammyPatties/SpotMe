@@ -6,7 +6,7 @@ import { SignUpButton } from "@clerk/nextjs";
 
 export default async function LandingPage() {
   const { userId } = await auth();
-  if (userId) redirect("/dashboard");
+  if (userId) redirect("/match");
 
   const features = [
     { title: "Find your match", body: "Filter by gym, experience, and goals to find compatible partners." },

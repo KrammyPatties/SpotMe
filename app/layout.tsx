@@ -9,6 +9,7 @@ import {
 } from "@clerk/nextjs";
 import "./globals.css";
 import Image from "next/image";
+import { Nav } from "./nav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,7 +36,7 @@ export default function RootLayout({
       <html
         lang="en"
         className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-        <body className="min-h-full flex flex-col">
+        <body className="min-h-full flex flex-col pb-24">
           <header className="border-b border-ink/10 bg-cream">
             <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
               <a href="/" className="flex items-center gap-2">
@@ -68,6 +69,9 @@ export default function RootLayout({
             </div>
           </header>
           {children}
+          <Show when="signed-in">
+            <Nav />
+          </Show>
         </body>
       </html>
     </ClerkProvider>
