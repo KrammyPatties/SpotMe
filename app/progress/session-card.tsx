@@ -28,7 +28,7 @@ export function SessionCard({ session }: { session: WorkoutSession }) {
         <div className="border-t border-ink/10 px-4 py-2">
           {/* Level 2: each exercise */}
           {session.exercises.map((ex) => (
-            <details key={ex.exercise_name} className="py-1">
+            <details key={`${ex.exercise_index}:${ex.exercise_name}`} className="py-1">
               <summary className="cursor-pointer list-none py-1 text-sm font-medium hover:text-flame">
                 {ex.exercise_name}
                 <span className="ml-2 text-ink/50">

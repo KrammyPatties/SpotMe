@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { validateWorkoutPayload } from "@/lib/workouts/validate";
+import { validateWorkoutPayload, toStartCase } from "@/lib/workouts/validate";
 
 export async function POST(request: Request) {
   // 1. Auth - user id from the session, never the body.
@@ -35,11 +35,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Could not create session." }, { status: 500 });
   }
 
-  // 4. Flatten exercises -> set rows, assigning set_index per exercise
-  const setRows = exercises.flatMap((ex) =>
+  // 4. Flatten exercises -> set rows. Both indices are assigned server-side,
+  //    never taken from the body: exercise_index is the block's position in
+  //    the session, set_index the set's position within that block.
+  //    exercise_name is normalised to Start Case so the same exercise typed
+  //    with different casing ("bench press" / "Bench Press") matches as one.
+  const setRows = exercises.flatMap((ex, exIdx) =>
     ex.sets.map((set, idx) => ({
       session_id: session.id,
-      exercise_name: ex.exercise_name,
+      exercise_name: toStartCase(ex.exercise_name),
+      exercise_index: exIdx + 1,
       set_index: idx + 1,
       reps: set.reps,
       weight_kg: set.weight_kg,

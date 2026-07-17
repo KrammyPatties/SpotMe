@@ -3,6 +3,14 @@ export type SetInput = {
   weight_kg: number;
 };
 
+export function toStartCase(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export type ExerciseInput = {
   exercise_name: string;
   sets: SetInput[];

@@ -157,9 +157,9 @@ describe("POST /api/workouts", () => {
     // All three sets persisted, linked to the session, indexed per exercise.
     const { data: sets, error: setsErr } = await db
       .from("workout_sets")
-      .select("exercise_name, set_index, reps, weight_kg")
+      .select("exercise_name, exercise_index, set_index, reps, weight_kg")
       .eq("session_id", json.id)
-      .order("exercise_name", { ascending: true })
+      .order("exercise_index", { ascending: true })
       .order("set_index", { ascending: true });
     expect(setsErr).toBeNull();
     expect(sets).toHaveLength(3);
@@ -168,6 +168,62 @@ describe("POST /api/workouts", () => {
     expect(bench).toHaveLength(2);
     expect(bench[0].set_index).toBe(1);
     expect(bench[1].set_index).toBe(2);
+  });
+
+  it("keeps same-name exercises in one session as distinct blocks", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: USER_ID };
+
+    const body = {
+      performed_on: "2026-06-27",
+      notes: "same-name merge regression",
+      exercises: [
+        { exercise_name: "Bench Press", sets: [{ reps: 8, weight_kg: 60 }] },
+        { exercise_name: "Squat", sets: [{ reps: 5, weight_kg: 100 }] },
+        { exercise_name: "Bench Press", sets: [{ reps: 5, weight_kg: 70 }] },
+      ],
+    };
+
+    const res = await POST(postRequest(body));
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    createdSessionIds.push(json.id);
+
+    const { data: sets } = await db
+      .from("workout_sets")
+      .select("exercise_name, exercise_index, set_index, weight_kg")
+      .eq("session_id", json.id)
+      .order("exercise_index", { ascending: true });
+
+    expect(sets).toHaveLength(3);
+
+    // Three blocks, indexed by position - the two benches are NOT merged.
+    expect(sets![0]).toMatchObject({ exercise_name: "Bench Press", exercise_index: 1, weight_kg: 60 });
+    expect(sets![1]).toMatchObject({ exercise_name: "Squat", exercise_index: 2 });
+    expect(sets![2]).toMatchObject({ exercise_name: "Bench Press", exercise_index: 3, weight_kg: 70 });
+  });
+
+  it("normalises exercise names to Start Case on write", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: USER_ID };
+
+    const res = await POST(
+      postRequest({
+        performed_on: "2026-06-28",
+        notes: null,
+        exercises: [
+          { exercise_name: "  bench   PRESS ", sets: [{ reps: 8, weight_kg: 60 }] },
+        ],
+      })
+    );
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    createdSessionIds.push(json.id);
+
+    const { data: sets } = await db
+      .from("workout_sets")
+      .select("exercise_name")
+      .eq("session_id", json.id);
+
+    expect(sets![0].exercise_name).toBe("Bench Press");
   });
 
   it("assigns clerk_user_id from the session, not the request body", async () => {

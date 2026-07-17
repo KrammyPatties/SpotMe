@@ -3,12 +3,14 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 export type WorkoutSet = {
   id: string;
   exercise_name: string;
+  exercise_index: number;
   set_index: number;
   reps: number;
   weight_kg: number;
 };
 
 export type WorkoutExercise = {
+  exercise_index: number;
   exercise_name: string;
   sets: WorkoutSet[];
 };
@@ -23,7 +25,8 @@ export type WorkoutSession = {
 
 /**
  * Returns a user's workout sessions, newest first, each with its sets
- * grouped by exercise_name (sets ordered by set_index within an exercise).
+ * grouped by (exercise_index, exercise_name) so the same exercise logged
+ * twice in one session stays distinct (sets ordered by set_index within).
  *
  * Batched, not a nested join: fetch sessions, then fetch all their sets in
  * one query, then assemble in JS by session_id.
@@ -47,8 +50,9 @@ export async function getWorkoutSessions(
   const sessionIds = sessions.map((s) => s.id);
   const { data: sets, error: setsError } = await supabaseAdmin
     .from("workout_sets")
-    .select("id, session_id, exercise_name, set_index, reps, weight_kg")
+    .select("id, session_id, exercise_name, exercise_index, set_index, reps, weight_kg")
     .in("session_id", sessionIds)
+    .order("exercise_index", { ascending: true })
     .order("set_index", { ascending: true });
 
   if (setsError) throw setsError;
@@ -64,22 +68,30 @@ export async function getWorkoutSessions(
   return sessions.map((session) => {
     const sessionSets = setsBySession.get(session.id) ?? [];
 
-    // Group by exercise_name, preserving first-seen order.
+    // Group by (exercise_index, exercise_name) so the same exercise logged
+    // twice in one session stays as two distinct blocks. Sets already arrive
+    // ordered by exercise_index then set_index, so first-seen order is right.
     const byExercise = new Map<string, WorkoutSet[]>();
     for (const set of sessionSets) {
-      const list = byExercise.get(set.exercise_name) ?? [];
+      const key = `${set.exercise_index}:${set.exercise_name}`;
+      const list = byExercise.get(key) ?? [];
       list.push({
         id: set.id,
         exercise_name: set.exercise_name,
+        exercise_index: set.exercise_index,
         set_index: set.set_index,
         reps: set.reps,
         weight_kg: set.weight_kg,
       });
-      byExercise.set(set.exercise_name, list);
+      byExercise.set(key, list);
     }
 
-    const exercises: WorkoutExercise[] = Array.from(byExercise.entries()).map(
-      ([exercise_name, exerciseSets]) => ({ exercise_name, sets: exerciseSets })
+    const exercises: WorkoutExercise[] = Array.from(byExercise.values()).map(
+      (exerciseSets) => ({
+        exercise_index: exerciseSets[0].exercise_index,
+        exercise_name: exerciseSets[0].exercise_name,
+        sets: exerciseSets,
+      })
     );
 
     return {
