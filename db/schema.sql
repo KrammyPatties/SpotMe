@@ -195,3 +195,16 @@ create index idx_workout_sessions_user_date
 -- fast set lookups when assembling a session's sets
 create index idx_workout_sets_session
   on workout_sets (session_id);
+
+-- fix: distinguish same-name exercises within a session
+-- exercise_index = which exercise block within the session (1-based)
+-- Sibling of set_index (which set within that block). Backfilled to 1 for
+-- existing rows, then default dropped so inserts must be explicit.
+alter table workout_sets
+  add column exercise_index int not null default 1 check (exercise_index >= 1);
+
+alter table workout_sets alter column exercise_index drop default;
+
+-- normalise existing exercise names
+update workout_sets
+set exercise_name = initcap(exercise_name);

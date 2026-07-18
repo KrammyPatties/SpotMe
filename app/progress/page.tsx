@@ -16,9 +16,6 @@ export default async function ProgressPage() {
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold">Progress</h1>
-          <Link href="/dashboard" className="text-sm text-flame hover:underline">
-            ← Back to dashboard
-          </Link>
         </div>
 
         <LogWorkout />

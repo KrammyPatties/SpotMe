@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateWorkoutPayload } from "./validate";
+import { toStartCase, validateWorkoutPayload } from "./validate";
 
 const validBody = {
   performed_on: "2026-06-26",
@@ -89,5 +89,15 @@ describe("validateWorkoutPayload", () => {
   it("rejects a non-object body", () => {
     expect(validateWorkoutPayload(null).ok).toBe(false);
     expect(validateWorkoutPayload("nope").ok).toBe(false);
+  });
+});
+
+describe("toStartCase", () => {
+  it("start-cases a lowercase name", () => {
+    expect(toStartCase("bench press")).toBe("Bench Press");
+  });
+
+  it("collapses whitespace and folds shouty input", () => {
+    expect(toStartCase("  BENCH   PRESS ")).toBe("Bench Press");
   });
 });
