@@ -24,7 +24,7 @@ export default async function ChatroomPage({
   // Initial history load.
   const { data: messages, error } = await supabaseAdmin
     .from("messages")
-    .select("id, chatroom_id, sender_id, content, created_at")
+    .select("id, chatroom_id, sender_id, type, content, created_at")
     .eq("chatroom_id", chatroomId)
     .order("created_at", { ascending: true })
     .limit(100);
