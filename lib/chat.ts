@@ -25,12 +25,17 @@ export async function isChatroomMember(
 }
 
 /**
- * Shows display name if 1:1 chat, room name if group,
- * or a fallback if unnamed.
+ * Builds the display label for a room from a viewer's perspective.
+ * Priority:
+ *   1. A custom name someone set (chatrooms.name).
+ *   2. Group (>2 members), unnamed to up to 3 other members' names, then "…".
+ *   3. 1:1 (2 members), unnamed to the other member's name.
+ *   4. Fallback to "Group chat".
+ * Computed at render so it stays correct as membership changes.
  */
 export async function getChatroomLabel(
   chatroomId: string,
-  clerkUserId: string
+  viewerId: string
 ): Promise<string> {
   const { data: room } = await supabaseAdmin
     .from("chatrooms")
@@ -38,27 +43,98 @@ export async function getChatroomLabel(
     .eq("id", chatroomId)
     .maybeSingle();
  
-  if (room?.name) return room.name;
+  if (room?.name) return room.name; // custom name wins
  
   const { data: members } = await supabaseAdmin
     .from("chatroom_members")
     .select("clerk_user_id")
     .eq("chatroom_id", chatroomId);
  
-  const others = (members ?? [])
-    .map((m) => m.clerk_user_id)
-    .filter((id) => id !== clerkUserId);
+  const memberIds = (members ?? []).map((m) => m.clerk_user_id);
+  const otherIds = memberIds.filter((id) => id !== viewerId);
+  if (otherIds.length === 0) return "Group chat";
  
-  if (others.length === 1) {
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("display_name")
-      .eq("clerk_user_id", others[0])
-      .maybeSingle();
-    return profile?.display_name ?? "Unknown user";
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name")
+    .in("clerk_user_id", otherIds);
+ 
+  const nameById = new Map(
+    (profiles ?? []).map((p) => [p.clerk_user_id, p.display_name ?? "Unknown"])
+  );
+  const names = otherIds.map((id) => nameById.get(id) ?? "Unknown");
+ 
+  if (memberIds.length === 2) return names[0]; // 1:1
+ 
+  // Group: up to 3 names, ellipsis if more.
+  const shown = names.slice(0, 3).join(", ");
+  return names.length > 3 ? `${shown}…` : shown;
+}
+
+// Full roster of a room (for the members panel). Requester must be a member.
+export async function getChatroomMembers(
+  chatroomId: string,
+  requesterId: string
+): Promise<{ clerkUserId: string; displayName: string; addedBy: string | null }[]> {
+  if (!(await isChatroomMember(chatroomId, requesterId))) return [];
+ 
+  const { data: members } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("clerk_user_id, added_by")
+    .eq("chatroom_id", chatroomId);
+ 
+  const ids = (members ?? []).map((m) => m.clerk_user_id);
+  if (ids.length === 0) return [];
+ 
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name")
+    .in("clerk_user_id", ids);
+ 
+  const nameById = new Map(
+    (profiles ?? []).map((p) => [p.clerk_user_id, p.display_name ?? "Unknown"])
+  );
+ 
+  return (members ?? []).map((m) => ({
+    clerkUserId: m.clerk_user_id,
+    displayName: nameById.get(m.clerk_user_id) ?? "Unknown",
+    addedBy: m.added_by ?? null,
+  }));
+}
+ 
+// Inserts a system message into a room (no sender). Broadcast live via Realtime.
+export async function postSystemMessage(
+  chatroomId: string,
+  content: string
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("messages")
+    .insert({ chatroom_id: chatroomId, sender_id: null, type: "system", content });
+  if (error) console.error("postSystemMessage failed:", error);
+}
+ 
+// Renames a room. Any member may rename. Empty/blank name clears it (reverts to auto).
+export async function renameChatroom(
+  chatroomId: string,
+  requesterId: string,
+  newName: string
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!(await isChatroomMember(chatroomId, requesterId))) {
+    return { ok: false, reason: "not a member" };
   }
+  const trimmed = newName.trim();
+  const value = trimmed.length === 0 ? null : trimmed.slice(0, 100);
  
-  return `Group (${(members ?? []).length})`;
+  const { error } = await supabaseAdmin
+    .from("chatrooms")
+    .update({ name: value })
+    .eq("id", chatroomId);
+ 
+  if (error) {
+    console.error("renameChatroom failed:", error);
+    return { ok: false, reason: "update failed" };
+  }
+  return { ok: true };
 }
 
 export type Conversation = {
@@ -419,22 +495,15 @@ export async function addMemberToChatroom(
     return { ok: false, reason: "insert failed" };
   }
 
-  // If the room is now a group >2 and unnamed, give it a default name so the
-  // list/header stop labelling it as a 1:1.
-  const newCount = memberIds.length + 1;
-  if (newCount > 2) {
-    const { data: room } = await supabaseAdmin
-      .from("chatrooms")
-      .select("name")
-      .eq("id", chatroomId)
-      .maybeSingle();
-    if (room && !room.name) {
-      await supabaseAdmin
-        .from("chatrooms")
-        .update({ name: "Group chat" })
-        .eq("id", chatroomId);
-    }
-  }
+  const { data: names } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name")
+    .in("clerk_user_id", [requesterId, targetId]);
+  const nm = new Map((names ?? []).map((p) => [p.clerk_user_id, p.display_name ?? "Someone"]));
+  await postSystemMessage(
+    chatroomId,
+    `${nm.get(targetId) ?? "Someone"} was added by ${nm.get(requesterId) ?? "someone"}`
+  );
 
   return { ok: true };
 }
