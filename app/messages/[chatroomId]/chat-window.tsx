@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import AddToChat from "./add-to-chat";
+import RoomInfo from "./room-info";
 
 type Message = {
   id: string;
   chatroom_id: string;
-  sender_id: string;
+  sender_id: string | null; // null for system messages
+  type?: "user" | "system";
   content: string;
   created_at: string;
   pending?: boolean; // true while an optimistic message awaits confirmation
@@ -128,13 +130,23 @@ export default function ChatWindow({
           <span className="text-sm">Back</span>
         </Link>
         {label && <h1 className="font-semibold truncate">{label}</h1>}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          <RoomInfo chatroomId={chatroomId} currentName={label ?? "Chat"} />
           <AddToChat chatroomId={chatroomId} />
         </div>
         </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((m) => {
+          if (m.type === "system") {
+            return (
+              <div key={m.id} className="flex justify-center">
+                <span className="text-xs text-ink/50 italic px-3 py-1">
+                  {m.content}
+                </span>
+              </div>
+            );
+          }              
           const mine = m.sender_id === currentUserId;
           return (
             <div
