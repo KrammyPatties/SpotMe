@@ -4,7 +4,13 @@ import {
   estimateOneRepMax,
   linearRegression,
   detectPlateau,
+  seriesToPoints,
+  weightedRegression,
+  decayForCount,
+  fitTrend,
+  projectForward,
 } from "./analytics";
+import type { ExerciseSeries } from "./analytics";
 import type { WorkoutSession } from "./supabase/workouts";
 
 /**
@@ -240,5 +246,149 @@ describe("detectPlateau", () => {
 
   it("respects a custom window size", () => {
     expect(detectPlateau([100, 100, 120, 120], 2)).toBe("improving");
+  });
+});
+
+// A small helper: build an ExerciseSeries from (date, bestOneRepMax) pairs.
+// topWeight/totalVolume default to the 1RM value unless overridden — the
+// trend tests only read the metric they ask for.
+function seriesOf(
+  name: string,
+  rows: [string, number][],
+): ExerciseSeries {
+  return {
+    exerciseName: name,
+    points: rows.map(([date, v]) => ({
+      date,
+      bestOneRepMax: v,
+      topWeight: v,
+      totalVolume: v,
+    })),
+  };
+}
+
+describe("seriesToPoints", () => {
+  it("returns [] for an empty series", () => {
+    expect(seriesToPoints(seriesOf("Bench Press", []))).toEqual([]);
+  });
+
+  it("converts dates to whole-day offsets from the first point", () => {
+    const points = seriesToPoints(
+      seriesOf("Bench Press", [
+        ["2026-07-01", 100],
+        ["2026-07-08", 105],
+        ["2026-07-15", 110],
+      ]),
+    );
+    expect(points.map((p) => p.x)).toEqual([0, 7, 14]);
+    expect(points.map((p) => p.y)).toEqual([100, 105, 110]);
+  });
+
+  it("reads the requested metric", () => {
+    const series = seriesOf("Bench Press", [["2026-07-01", 42]]);
+    series.points[0].totalVolume = 999;
+    expect(seriesToPoints(series, "totalVolume")[0].y).toBe(999);
+  });
+});
+
+describe("weightedRegression", () => {
+  it("equals ordinary regression when all weights are equal", () => {
+    const pts = [{ x: 0, y: 10 }, { x: 1, y: 12 }, { x: 2, y: 14 }];
+    const weighted = weightedRegression(pts, [1, 1, 1]);
+    const linear = linearRegression(pts);
+    expect(weighted!.slope).toBeCloseTo(linear!.slope, 9);
+    expect(weighted!.intercept).toBeCloseTo(linear!.intercept, 9);
+  });
+
+  it("recovers a perfect line regardless of weights", () => {
+    const line = weightedRegression(
+      [{ x: 0, y: 10 }, { x: 1, y: 12 }, { x: 2, y: 14 }, { x: 3, y: 16 }],
+      [0.7, 0.8, 0.9, 1],
+    );
+    expect(line!.slope).toBeCloseTo(2, 6);
+    expect(line!.intercept).toBeCloseTo(10, 6);
+  });
+
+  it("returns null below the minimum point count", () => {
+    expect(weightedRegression([{ x: 0, y: 1 }, { x: 1, y: 2 }], [1, 1])).toBeNull();
+  });
+});
+
+describe("decayForCount", () => {
+  it("clamps to at most 0.95 for sparse data", () => {
+    expect(decayForCount(3)).toBeLessThanOrEqual(0.95);
+    expect(decayForCount(3)).toBeGreaterThanOrEqual(0.75);
+  });
+
+  it("clamps to a floor of 0.75 for rich data", () => {
+    expect(decayForCount(100)).toBe(0.75);
+  });
+});
+
+describe("fitTrend", () => {
+  it("returns null below three points", () => {
+    expect(fitTrend([{ x: 0, y: 1 }, { x: 1, y: 2 }])).toBeNull();
+  });
+
+  it("returns null when all x are identical (degenerate)", () => {
+    expect(fitTrend([{ x: 2, y: 1 }, { x: 2, y: 2 }, { x: 2, y: 3 }])).toBeNull();
+  });
+
+  it("leans toward the recent trend on a bending series", () => {
+    // Flat early, rising late: recency-weighted slope >= plain linear slope.
+    const pts = [
+      { x: 0, y: 100 }, { x: 1, y: 100 }, { x: 2, y: 100 },
+      { x: 3, y: 105 }, { x: 4, y: 112 },
+    ];
+    const weighted = fitTrend(pts)!;
+    const linear = linearRegression(pts)!;
+    expect(weighted.slope).toBeGreaterThanOrEqual(linear.slope);
+  });
+});
+
+describe("projectForward", () => {
+  it("returns null below the three-point gate", () => {
+    expect(
+      projectForward(seriesOf("Bench Press", [["2026-07-01", 100], ["2026-07-08", 105]])),
+    ).toBeNull();
+  });
+
+  it("returns null for an all-same-day series", () => {
+    expect(
+      projectForward(
+        seriesOf("Bench Press", [
+          ["2026-07-01", 100],
+          ["2026-07-01", 105],
+          ["2026-07-01", 110],
+        ]),
+      ),
+    ).toBeNull();
+  });
+
+  it("projects the correct number of future days", () => {
+    const proj = projectForward(
+      seriesOf("Bench Press", [
+        ["2026-07-01", 100],
+        ["2026-07-08", 105],
+        ["2026-07-15", 110],
+      ]),
+      7,
+    );
+    expect(proj).toHaveLength(7);
+    // First projected day is the day after the last actual point (x=14 -> 15).
+    expect(proj![0].dayOffset).toBe(15);
+  });
+
+  it("continues a perfect linear trend", () => {
+    // +5 every 7 days -> slope 5/7. Value at x=15 = 100 + (5/7)*15.
+    const proj = projectForward(
+      seriesOf("Bench Press", [
+        ["2026-07-01", 100],
+        ["2026-07-08", 105],
+        ["2026-07-15", 110],
+      ]),
+      7,
+    );
+    expect(proj![0].value).toBeCloseTo(100 + (5 / 7) * 15, 6);
   });
 });
