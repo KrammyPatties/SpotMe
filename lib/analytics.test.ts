@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildExerciseSeries } from "./analytics";
+import {
+  buildExerciseSeries,
+  estimateOneRepMax,
+  linearRegression,
+  detectPlateau,
+} from "./analytics";
 import type { WorkoutSession } from "./supabase/workouts";
 
 /**
@@ -154,5 +159,86 @@ describe("buildExerciseSeries", () => {
     expect(result[0].points[0].bestOneRepMax).toBe(0);
     expect(result[0].points[0].topWeight).toBe(0);
     expect(result[0].points[0].totalVolume).toBe(0);
+  });
+});
+
+describe("estimateOneRepMax", () => {
+  it("returns the weight unchanged for a single rep", () => {
+    expect(estimateOneRepMax(100, 1)).toBe(100);
+  });
+
+  it("returns the weight unchanged for zero reps (guard)", () => {
+    expect(estimateOneRepMax(100, 0)).toBe(100);
+  });
+
+  it("applies Epley for multi-rep sets", () => {
+    // 80kg x5 -> 80 * (1 + 5/30) = 93.333...
+    expect(estimateOneRepMax(80, 5)).toBeCloseTo(93.3333, 3);
+  });
+
+  it("scales with reps (10 reps at 100kg)", () => {
+    // 100 * (1 + 10/30) = 133.333...
+    expect(estimateOneRepMax(100, 10)).toBeCloseTo(133.3333, 3);
+  });
+});
+
+describe("linearRegression", () => {
+  it("returns null below the minimum point count", () => {
+    expect(linearRegression([{ x: 0, y: 1 }, { x: 1, y: 2 }])).toBeNull();
+  });
+
+  it("recovers slope and intercept of a perfect line", () => {
+    // y = 2x + 10
+    const line = linearRegression([
+      { x: 0, y: 10 },
+      { x: 1, y: 12 },
+      { x: 2, y: 14 },
+    ]);
+    expect(line).not.toBeNull();
+    expect(line!.slope).toBeCloseTo(2, 6);
+    expect(line!.intercept).toBeCloseTo(10, 6);
+  });
+
+  it("returns null when all x values are identical (divide-by-zero guard)", () => {
+    expect(
+      linearRegression([{ x: 5, y: 1 }, { x: 5, y: 2 }, { x: 5, y: 3 }]),
+    ).toBeNull();
+  });
+
+  it("fits a best-fit line through noisy points", () => {
+    // (0,1)(1,3)(2,2)(3,5)(4,4) -> least-squares slope 0.8, intercept 1.4
+    const line = linearRegression([
+      { x: 0, y: 1 },
+      { x: 1, y: 3 },
+      { x: 2, y: 2 },
+      { x: 3, y: 5 },
+      { x: 4, y: 4 },
+    ]);
+    expect(line!.slope).toBeCloseTo(0.8, 6);
+    expect(line!.intercept).toBeCloseTo(1.4, 6);
+  });
+});
+
+describe("detectPlateau", () => {
+  it("reports insufficient_data below two full windows", () => {
+    expect(detectPlateau([1, 2, 3, 4, 5])).toBe("insufficient_data");
+  });
+
+  it("detects improvement above the threshold", () => {
+    // prior avg 100, recent avg 110 -> +10% > 2%
+    expect(detectPlateau([100, 100, 100, 110, 110, 110])).toBe("improving");
+  });
+
+  it("detects a plateau below the threshold", () => {
+    // prior avg 100, recent avg ~100.33 -> +0.33% < 2%
+    expect(detectPlateau([100, 100, 100, 100, 101, 100])).toBe("plateau");
+  });
+
+  it("treats positive progress from a zero baseline as improving", () => {
+    expect(detectPlateau([0, 0, 0, 50, 50, 50])).toBe("improving");
+  });
+
+  it("respects a custom window size", () => {
+    expect(detectPlateau([100, 100, 120, 120], 2)).toBe("improving");
   });
 });

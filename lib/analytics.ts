@@ -22,16 +22,6 @@ export type ExerciseSeries = {
 };
 
 /**
- * Minimal Epley 1RM used only for shaping in Phase 0. Phase 1a promotes this
- * to a estimateOneRepMax and this file imports that instead (one-line swap). 
- * reps === 1 returns the weight unchanged (a single rep IS the 1RM; Epley would otherwise inflate it by ~3%).
- */
-function epley(weight: number, reps: number): number {
-  if (reps <= 1) return weight;
-  return weight * (1 + reps / 30);
-}
-
-/**
  * Reshapes a user's sessions into per-exercise time series for analytics.
  *
  * Input: WorkoutSession[] exactly as getWorkoutSessions returns (newest-first,
@@ -76,7 +66,7 @@ export function buildExerciseSeries(
       let totalVolume = existing?.totalVolume ?? 0;
 
       for (const set of exercise.sets) {
-        const orm = epley(set.weight_kg, set.reps);
+        const orm = estimateOneRepMax(set.weight_kg, set.reps);
         if (orm > bestOneRepMax) bestOneRepMax = orm;
         if (set.weight_kg > topWeight) topWeight = set.weight_kg;
         totalVolume += set.reps * set.weight_kg;
@@ -96,4 +86,96 @@ export function buildExerciseSeries(
   }
 
   return series;
+}
+
+/**
+ * Estimated one-rep max via the Epley formula: weight * (1 + reps/30).
+ *
+ * The canonical version (Phase 0's private `epley` is removed and this is
+ * used everywhere instead). reps <= 1 returns the weight unchanged — a single
+ * rep already IS a 1RM, and Epley would otherwise inflate it by ~3%.
+ *
+ * Epley is chosen over Brzycki for one honest reason: Brzycki's denominator
+ * (37 - reps) collapses toward zero near 37 reps, producing absurd estimates,
+ * while Epley degrades gracefully. Estimates above ~12 reps are unreliable for
+ * BOTH formulas (the linear rep-strength assumption breaks down); callers that
+ * care should flag high-rep sets rather than trust the number.
+ */
+export function estimateOneRepMax(weight: number, reps: number): number {
+  if (reps <= 1) return weight;
+  return weight * (1 + reps / 30);
+}
+
+/** A fitted straight line: value = slope * x + intercept, where x is the
+ *  day-offset from the first point. `null` means "not enough data to fit." */
+export type TrendLine = { slope: number; intercept: number };
+
+/**
+ * Least-squares linear regression over (x, y) points, where x is days-since
+ * the first point and y is the metric value (est-1RM by default).
+ *
+ * Returns null below MIN_POINTS_FOR_TREND (3) — a product decision, not a
+ * math one: a line only needs 2 points, but projecting a strength trend off
+ * two data points is noise, so we refuse. Also returns null if every x is
+ * identical (all points same day) — the slope would divide by zero.
+ *
+ * Pure; consumed by the projection step and by Phase 1b's swappable fit.
+ */
+export const MIN_POINTS_FOR_TREND = 3;
+
+export function linearRegression(
+  points: { x: number; y: number }[],
+): TrendLine | null {
+  const n = points.length;
+  if (n < MIN_POINTS_FOR_TREND) return null;
+
+  const sumX = points.reduce((acc, p) => acc + p.x, 0);
+  const sumY = points.reduce((acc, p) => acc + p.y, 0);
+  const sumXY = points.reduce((acc, p) => acc + p.x * p.y, 0);
+  const sumXX = points.reduce((acc, p) => acc + p.x * p.x, 0);
+
+  // Denominator of the least-squares slope. Zero when all x are equal
+  // (e.g. every point on the same day) - undefined slope, so bail.
+  const denominator = n * sumXX - sumX * sumX;
+  if (denominator === 0) return null;
+
+  const slope = (n * sumXY - sumX * sumY) / denominator;
+  const intercept = (sumY - slope * sumX) / n;
+
+  return { slope, intercept };
+}
+
+/** Plateau status for the UI's status pill. Three distinct states so a
+ *  new user ("insufficient_data") is never mislabelled as plateaued. */
+export type PlateauStatus = "improving" | "plateau" | "insufficient_data";
+
+/**
+ * Detects a strength plateau by comparing two rolling windows: the average of
+ * the most-recent `window` points against the average of the `window` points
+ * before them. If recent hasn't improved on prior by more than `threshold`
+ * (fractional, e.g. 0.02 = 2%), it's a plateau.
+ *
+ * Needs at least 2*window points to fill both windows; fewer -> insufficient.
+ * Values are the metric being tracked (est-1RM per day), oldest-first.
+ */
+export function detectPlateau(
+  values: number[],
+  window = 3,
+  threshold = 0.02,
+): PlateauStatus {
+  if (values.length < window * 2) return "insufficient_data";
+
+  const recent = values.slice(-window);
+  const prior = values.slice(-window * 2, -window);
+
+  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const recentAvg = avg(recent);
+  const priorAvg = avg(prior);
+
+  // Guard: if prior averaged zero (all-bodyweight history), any positive
+  // recent average is improvement; otherwise it's flat.
+  if (priorAvg === 0) return recentAvg > 0 ? "improving" : "plateau";
+
+  const relativeGain = (recentAvg - priorAvg) / priorAvg;
+  return relativeGain > threshold ? "improving" : "plateau";
 }
