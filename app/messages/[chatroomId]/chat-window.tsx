@@ -131,7 +131,7 @@ export default function ChatWindow({
         </Link>
         {label && <h1 className="font-semibold truncate">{label}</h1>}
         <div className="ml-auto flex items-center gap-3">
-          <RoomInfo chatroomId={chatroomId} currentName={label ?? "Chat"} />
+          <RoomInfo chatroomId={chatroomId} currentUserId={currentUserId} currentName={label ?? "Chat"} />
           <AddToChat chatroomId={chatroomId} />
         </div>
         </div>

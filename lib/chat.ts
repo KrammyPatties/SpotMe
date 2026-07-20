@@ -71,20 +71,31 @@ export async function getChatroomLabel(
   return names.length > 3 ? `${shown}…` : shown;
 }
 
-// Full roster of a room (for the members panel). Requester must be a member.
+// Adds is_admin per member and a viewerIsAdmin flag for the UI.
 export async function getChatroomMembers(
   chatroomId: string,
   requesterId: string
-): Promise<{ clerkUserId: string; displayName: string; addedBy: string | null }[]> {
-  if (!(await isChatroomMember(chatroomId, requesterId))) return [];
+): Promise<{
+  viewerIsAdmin: boolean;
+  members: {
+    clerkUserId: string;
+    displayName: string;
+    isAdmin: boolean;
+    addedBy: string | null;
+  }[];
+}> {
+  if (!(await isChatroomMember(chatroomId, requesterId))) {
+    return { viewerIsAdmin: false, members: [] };
+  }
  
-  const { data: members } = await supabaseAdmin
+  const { data: rows } = await supabaseAdmin
     .from("chatroom_members")
-    .select("clerk_user_id, added_by")
-    .eq("chatroom_id", chatroomId);
+    .select("clerk_user_id, is_admin, added_by, joined_at")
+    .eq("chatroom_id", chatroomId)
+    .order("joined_at", { ascending: true });
  
-  const ids = (members ?? []).map((m) => m.clerk_user_id);
-  if (ids.length === 0) return [];
+  const ids = (rows ?? []).map((m) => m.clerk_user_id);
+  if (ids.length === 0) return { viewerIsAdmin: false, members: [] };
  
   const { data: profiles } = await supabaseAdmin
     .from("profiles")
@@ -95,11 +106,17 @@ export async function getChatroomMembers(
     (profiles ?? []).map((p) => [p.clerk_user_id, p.display_name ?? "Unknown"])
   );
  
-  return (members ?? []).map((m) => ({
+  const members = (rows ?? []).map((m) => ({
     clerkUserId: m.clerk_user_id,
     displayName: nameById.get(m.clerk_user_id) ?? "Unknown",
+    isAdmin: m.is_admin === true,
     addedBy: m.added_by ?? null,
   }));
+ 
+  const viewerIsAdmin =
+    members.find((m) => m.clerkUserId === requesterId)?.isAdmin === true;
+ 
+  return { viewerIsAdmin, members };
 }
  
 // Inserts a system message into a room (no sender). Broadcast live via Realtime.
@@ -337,14 +354,21 @@ export async function getOrCreateChatroomForMatch(
   );
   if (existing) return existing;
  
-  // Create the room then add both members.
+  const pairKey = [match.initiator_id, match.recipient_id].sort().join(":");
+
   const { data: room, error: roomErr } = await supabaseAdmin
     .from("chatrooms")
-    .insert({ name: null })
+    .insert({ name: null, pair_key: pairKey })
     .select("id")
     .single();
- 
-  if (roomErr || !room) {
+
+  if (roomErr) {
+    const { data: existing } = await supabaseAdmin
+      .from("chatrooms")
+      .select("id")
+      .eq("pair_key", pairKey)
+      .maybeSingle();
+    if (existing) return existing.id;
     console.error("chatroom insert failed:", roomErr);
     return null;
   }
@@ -431,7 +455,7 @@ export async function getAddableUsers(
   requesterId: string
 ): Promise<{ clerkUserId: string; displayName: string }[]> {
   // Requester must be a member.
-  if (!(await isChatroomMember(chatroomId, requesterId))) return [];
+  if (!(await isChatroomAdmin(chatroomId, requesterId))) return [];
 
   const { data: members } = await supabaseAdmin
     .from("chatroom_members")
@@ -465,7 +489,7 @@ export async function addMemberToChatroom(
   targetId: string
 ): Promise<{ ok: boolean; reason?: string }> {
   if (!(await isChatroomMember(chatroomId, requesterId))) {
-    return { ok: false, reason: "requester not a member" };
+    return { ok: false, reason: "only an admin can add members" };
   }
 
   if (await isChatroomMember(chatroomId, targetId)) {
@@ -495,6 +519,14 @@ export async function addMemberToChatroom(
     return { ok: false, reason: "insert failed" };
   }
 
+  if (memberIds.length === 2) {
+    await supabaseAdmin
+      .from("chatroom_members")
+      .update({ is_admin: true })
+      .eq("chatroom_id", chatroomId)
+      .in("clerk_user_id", memberIds);
+  }
+
   const { data: names } = await supabaseAdmin
     .from("profiles")
     .select("clerk_user_id, display_name")
@@ -505,5 +537,110 @@ export async function addMemberToChatroom(
     `${nm.get(targetId) ?? "Someone"} was added by ${nm.get(requesterId) ?? "someone"}`
   );
 
+  return { ok: true };
+}
+
+// True if the user is an admin of the room. Fails closed on error.
+export async function isChatroomAdmin(
+  chatroomId: string,
+  clerkUserId: string
+): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("is_admin")
+    .eq("chatroom_id", chatroomId)
+    .eq("clerk_user_id", clerkUserId)
+    .maybeSingle();
+ 
+  if (error) {
+    console.error("isChatroomAdmin lookup failed:", error);
+    return false;
+  }
+  return data?.is_admin === true;
+}
+ 
+/**
+ * If a room has no admin left, promote the oldest remaining member
+ * (earliest joined_at). Safe to call after any removal/leave.
+ */
+async function ensureRoomHasAdmin(chatroomId: string): Promise<void> {
+  const { data: members } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("clerk_user_id, is_admin, joined_at")
+    .eq("chatroom_id", chatroomId)
+    .order("joined_at", { ascending: true });
+ 
+  const rows = members ?? [];
+  if (rows.length === 0) return;                 // empty room, nothing to do
+  if (rows.some((m) => m.is_admin)) return;      // an admin already exists
+ 
+  // Promote the oldest member.
+  const oldest = rows[0];
+  await supabaseAdmin
+    .from("chatroom_members")
+    .update({ is_admin: true })
+    .eq("chatroom_id", chatroomId)
+    .eq("clerk_user_id", oldest.clerk_user_id);
+}
+ 
+/**
+ * Removes a member from a room. Only an admin may remove someone, and only
+ * someone who isn't themselves (use leaveChatroom to remove yourself).
+ * After removal, ensures the room still has an admin.
+ */
+export async function removeMember(
+  chatroomId: string,
+  requesterId: string,
+  targetId: string
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!(await isChatroomAdmin(chatroomId, requesterId))) {
+    return { ok: false, reason: "only an admin can remove members" };
+  }
+  if (requesterId === targetId) {
+    return { ok: false, reason: "use leave to remove yourself" };
+  }
+  if (!(await isChatroomMember(chatroomId, targetId))) {
+    return { ok: false, reason: "target is not a member" };
+  }
+ 
+  const { error } = await supabaseAdmin
+    .from("chatroom_members")
+    .delete()
+    .eq("chatroom_id", chatroomId)
+    .eq("clerk_user_id", targetId);
+ 
+  if (error) {
+    console.error("removeMember failed:", error);
+    return { ok: false, reason: "delete failed" };
+  }
+ 
+  await ensureRoomHasAdmin(chatroomId); // in case we removed the last admin
+  return { ok: true };
+}
+ 
+/**
+ * The current user leaves a room (deletes their own membership). If they were
+ * the last admin, the oldest remaining member is auto-promoted.
+ */
+export async function leaveChatroom(
+  chatroomId: string,
+  clerkUserId: string
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!(await isChatroomMember(chatroomId, clerkUserId))) {
+    return { ok: false, reason: "not a member" };
+  }
+ 
+  const { error } = await supabaseAdmin
+    .from("chatroom_members")
+    .delete()
+    .eq("chatroom_id", chatroomId)
+    .eq("clerk_user_id", clerkUserId);
+ 
+  if (error) {
+    console.error("leaveChatroom failed:", error);
+    return { ok: false, reason: "delete failed" };
+  }
+ 
+  await ensureRoomHasAdmin(chatroomId);
   return { ok: true };
 }

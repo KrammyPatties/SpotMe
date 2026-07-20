@@ -19,6 +19,6 @@ export async function GET(req: Request) {
     );
   }
 
-  const members = await getChatroomMembers(chatroomId, userId);
-  return NextResponse.json({ members });
+    const result = await getChatroomMembers(chatroomId, userId);
+    return NextResponse.json(result);
 }
