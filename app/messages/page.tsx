@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { getConversationsForUser, ensureChatroomsForUser } from "@/lib/chat";
+import NewGroup from "./new-group";
 
 export default async function MessagesPage() {
   const { isAuthenticated, userId } = await auth();
@@ -14,7 +15,10 @@ export default async function MessagesPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Messages</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">Messages</h1>
+        <NewGroup />
+      </div>
 
       {conversations.length === 0 ? (
         <p className="text-ink/60">

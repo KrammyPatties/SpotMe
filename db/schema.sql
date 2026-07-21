@@ -129,28 +129,36 @@ alter table user_gyms
 
 -- Chatroom and Messaging
  
--- Conversation, NULL if 1-1 convo, else name provided
+-- Conversation, NULL if 1:1 convo, else name provided
 create table if not exists chatrooms (
   id          uuid primary key default gen_random_uuid(),
   name        text,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  pair_key    text
 );
+
+-- One 1:1 room per pair; groups (pair_key null) are exempt.
+create unique index if not exists idx_chatrooms_pair_key
+  on chatrooms (pair_key) where pair_key is not null;
  
 -- Which users are in which chatroom
 create table if not exists chatroom_members (
   chatroom_id   uuid not null references chatrooms(id) on delete cascade,
   clerk_user_id text not null references profiles(clerk_user_id) on delete cascade,
   joined_at     timestamptz not null default now(),
+  added_by      text references profiles(clerk_user_id) on delete set null,
+  is_admin      boolean not null default false,  -- unused, legacy of retired adminship model, dormant
   primary key (chatroom_id, clerk_user_id)
 );
- 
+
 -- Individual messages, each belonging to one chatroom
 create table if not exists messages (
   id          uuid primary key default gen_random_uuid(),
   chatroom_id uuid not null references chatrooms(id) on delete cascade,
-  sender_id   text not null references profiles(clerk_user_id) on delete cascade,
+  sender_id   text references profiles(clerk_user_id) on delete cascade,
   content     text not null check (char_length(content) between 1 and 2000),
   created_at  timestamptz not null default now()
+  type        text not null default 'user' check (type in ('user','system')),
 );
  
 create index if not exists idx_messages_chatroom_created
