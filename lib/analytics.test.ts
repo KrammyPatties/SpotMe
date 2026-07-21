@@ -226,8 +226,12 @@ describe("linearRegression", () => {
 });
 
 describe("detectPlateau", () => {
-  it("reports insufficient_data below two full windows", () => {
-    expect(detectPlateau([1, 2, 3, 4, 5])).toBe("insufficient_data");
+  it("reports insufficient_data below the projection gate", () => {
+    expect(detectPlateau([1, 2])).toBe("insufficient_data");
+  });
+
+  it("reports provisional for 3–5 points (trend shown, no confident verdict)", () => {
+    expect(detectPlateau([1, 2, 3, 4, 5])).toBe("provisional");
   });
 
   it("detects improvement above the threshold", () => {

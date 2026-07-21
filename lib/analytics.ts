@@ -147,7 +147,11 @@ export function linearRegression(
 
 /** Plateau status for the UI's status pill. Three distinct states so a
  *  new user ("insufficient_data") is never mislabelled as plateaued. */
-export type PlateauStatus = "improving" | "plateau" | "insufficient_data";
+export type PlateauStatus =
+  | "improving"
+  | "plateau"
+  | "provisional"
+  | "insufficient_data";
 
 /**
  * Detects a strength plateau by comparing two rolling windows: the average of
@@ -163,7 +167,10 @@ export function detectPlateau(
   window = 3,
   threshold = 0.02,
 ): PlateauStatus {
-  if (values.length < window * 2) return "insufficient_data";
+  if (values.length < MIN_POINTS_FOR_TREND) return "insufficient_data";
+  // 3–5 points (≥ projection gate but < two full windows): show a trend, but
+  // don't claim a confident improving/plateau verdict yet.
+  if (values.length < window * 2) return "provisional";
 
   const recent = values.slice(-window);
   const prior = values.slice(-window * 2, -window);
