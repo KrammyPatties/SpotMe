@@ -337,14 +337,23 @@ export async function getOrCreateChatroomForMatch(
   );
   if (existing) return existing;
  
+  const pairKey = [match.initiator_id, match.recipient_id].sort().join(":");
+
   // Create the room then add both members.
   const { data: room, error: roomErr } = await supabaseAdmin
     .from("chatrooms")
-    .insert({ name: null })
+    .insert({ name: null, pair_key: pairKey })
     .select("id")
     .single();
- 
+
   if (roomErr || !room) {
+    // The unique index may have rejected a duplicate so return the existing room.
+    const { data: existing } = await supabaseAdmin
+      .from("chatrooms")
+      .select("id")
+      .eq("pair_key", pairKey)
+      .maybeSingle();
+    if (existing) return existing.id;
     console.error("chatroom insert failed:", roomErr);
     return null;
   }
@@ -420,6 +429,107 @@ async function acceptedMatchIdsForMembers(
   // Don't offer people already in the room.
   for (const id of memberIds) eligible.delete(id);
   return eligible;
+}
+
+/**
+ * The set of clerk_user_ids who are accepted matches of a single user.
+ * A thin wrapper over acceptedMatchIdsForMembers for the group-creation path,
+ * where membership is validated against the creator's own matches only.
+ */
+async function acceptedMatchIdsForUser(userId: string): Promise<Set<string>> {
+  return acceptedMatchIdsForMembers([userId]);
+}
+
+/**
+ * The creator's accepted matches as pickable options for group creation:
+ * each accepted match resolved to { clerkUserId, displayName }.
+ * Backs the GET /api/matches/accepted endpoint that feeds the member picker.
+ */
+export async function getAcceptedMatchProfiles(
+  userId: string
+): Promise<{ clerkUserId: string; displayName: string }[]> {
+  const eligible = await acceptedMatchIdsForUser(userId);
+  if (eligible.size === 0) return [];
+
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name")
+    .in("clerk_user_id", [...eligible]);
+
+  return (profiles ?? []).map((p) => ({
+    clerkUserId: p.clerk_user_id,
+    displayName: p.display_name ?? "Unknown user",
+  }));
+}
+
+/**
+ * Creates a named group chat with a fixed membership set at creation.
+ * The creator is always a member and every other member must be an accepted
+ * match of the creator. Requires a name and at least 2 other members.
+ * Posts a "<name> was created" system message.
+ */
+export async function createGroupChat(
+  creatorId: string,
+  name: string,
+  memberIds: string[]
+): Promise<{ ok: true; chatroomId: string } | { ok: false; reason: string }> {
+  // 1. Validate the name.
+  const trimmedName = name.trim();
+  if (trimmedName.length === 0) {
+    return { ok: false, reason: "name required" };
+  }
+  const finalName = trimmedName.slice(0, 100);
+
+  // 2. Normalise the requested members: dedupe, drop the creator if included.
+  const requested = Array.from(new Set(memberIds)).filter(
+    (id) => id !== creatorId
+  );
+  if (requested.length < 2) {
+    return { ok: false, reason: "a group needs at least 2 other members" };
+  }
+
+  // 3. Authorise: every requested member must be the creator's accepted match.
+  const eligible = await acceptedMatchIdsForUser(creatorId);
+  for (const id of requested) {
+    if (!eligible.has(id)) {
+      return { ok: false, reason: "all members must be your accepted matches" };
+    }
+  }
+
+  // 4. Create the room. Groups carry pair_key = null (not subject to 1:1 uniqueness).
+  const { data: room, error: roomErr } = await supabaseAdmin
+    .from("chatrooms")
+    .insert({ name: finalName, pair_key: null })
+    .select("id")
+    .single();
+
+  if (roomErr || !room) {
+    console.error("createGroupChat: room insert failed:", roomErr);
+    return { ok: false, reason: "could not create room" };
+  }
+
+  // 5. Insert all members: the creator plus the validated others.
+  const allMemberIds = [creatorId, ...requested];
+  const memberRows = allMemberIds.map((id) => ({
+    chatroom_id: room.id,
+    clerk_user_id: id,
+    added_by: id === creatorId ? null : creatorId,
+  }));
+
+  const { error: memErr } = await supabaseAdmin
+    .from("chatroom_members")
+    .insert(memberRows);
+
+  if (memErr) {
+    console.error("createGroupChat: members insert failed:", memErr);
+    await supabaseAdmin.from("chatrooms").delete().eq("id", room.id);
+    return { ok: false, reason: "could not add members" };
+  }
+
+  // 6. Announce the room through system message.
+  await postSystemMessage(room.id, `${finalName} was created`);
+
+  return { ok: true, chatroomId: room.id };
 }
 
 /**
