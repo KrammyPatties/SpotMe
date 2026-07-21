@@ -7,21 +7,13 @@
 // pre-computed bundle to display, so switching exercises is instant.
 
 import { useState } from "react";
-import { ExerciseChart, type ChartRow } from "./exercise-chart";
+import { ExerciseChart } from "./exercise-chart";
+import type { ExerciseAnalytics } from "@/lib/analytics-prep";
 import type { PlateauStatus } from "@/lib/analytics";
 
-/** One exercise's fully-prepared analytics, computed server-side. */
-export type ExerciseAnalytics = {
-  exerciseName: string;
-  rows: ChartRow[]; // actuals + projection merged, DD/MM labels
-  hasProjection: boolean; // false when < 3 points (projection gate)
-  status: PlateauStatus;
-  pointCount: number; // distinct logged days
-  currentOneRepMax: number | null; // latest actual est-1RM
-  changeOverPeriod: number | null; // latest - earliest actual est-1RM
-};
+export type { ExerciseAnalytics };
 
-const STATUS_PILL: Record<
+const STATUS_PILL: Record <
   PlateauStatus,
   { text: string; className: string }
 > = {
@@ -32,6 +24,10 @@ const STATUS_PILL: Record<
   plateau: {
     text: "Plateau",
     className: "bg-ink/10 text-ink/60",
+  },
+  provisional: {
+    text: "Building your trend",
+    className: "bg-flame/10 text-flame/80",
   },
   insufficient_data: {
     text: "Keep logging to see trends",
