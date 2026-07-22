@@ -144,6 +144,82 @@ describe("POST /api/messages", () => {
   });
 });
 
+  it("persists client_msg_id on a successful send", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: MEMBER_ID };
+    const clientMsgId = crypto.randomUUID();
+    const content = `client id ${Date.now()}`;
+
+    const res = await POST(
+      postRequest({ chatroom_id: roomId, content, client_msg_id: clientMsgId })
+    );
+    expect(res.status).toBe(201);
+
+    const json = await res.json();
+    expect(json.message.client_msg_id).toBe(clientMsgId);
+
+    const { data, error } = await db
+      .from("messages")
+      .select("client_msg_id")
+      .eq("id", json.message.id)
+      .single();
+
+    expect(error).toBeNull();
+    expect(data?.client_msg_id).toBe(clientMsgId);
+  });
+
+  it("409 on a duplicate client_msg_id, without creating a second row", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: MEMBER_ID };
+    const clientMsgId = crypto.randomUUID();
+    const body = {
+      chatroom_id: roomId,
+      content: `only once ${Date.now()}`,
+      client_msg_id: clientMsgId,
+    };
+
+    const first = await POST(postRequest(body));
+    expect(first.status).toBe(201);
+
+    const second = await POST(postRequest(body));
+    expect(second.status).toBe(409);
+
+    const { data } = await db
+      .from("messages")
+      .select("id")
+      .eq("client_msg_id", clientMsgId);
+    expect(data).toHaveLength(1);
+  });
+
+  it("400 when client_msg_id is not a string", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: MEMBER_ID };
+    const res = await POST(
+      postRequest({ chatroom_id: roomId, content: "hi", client_msg_id: 12345 })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("400 when client_msg_id is over the length bound", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: MEMBER_ID };
+    const res = await POST(
+      postRequest({
+        chatroom_id: roomId,
+        content: "hi",
+        client_msg_id: "x".repeat(65),
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("201 with a null client_msg_id when the field is omitted", async () => {
+    currentAuthRef.value = { isAuthenticated: true, userId: MEMBER_ID };
+    const res = await POST(
+      postRequest({ chatroom_id: roomId, content: `legacy ${Date.now()}` })
+    );
+    expect(res.status).toBe(201);
+
+    const json = await res.json();
+    expect(json.message.client_msg_id).toBeNull();
+  });
+
 it("401 add-member when signed out", async () => {
   currentAuthRef.value = { isAuthenticated: false, userId: null };
   const { POST: ADD } = await import("../members/route");
