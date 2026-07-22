@@ -22,9 +22,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { chatroom_id, content } = (body ?? {}) as {
+  const { chatroom_id, content, client_msg_id } = (body ?? {}) as {
     chatroom_id?: unknown;
     content?: unknown;
+    client_msg_id?: unknown;
   };
 
   if (typeof chatroom_id !== "string" || !UUID_RE.test(chatroom_id)) {
@@ -55,6 +56,18 @@ export async function POST(req: Request) {
     );
   }
 
+  if (
+    client_msg_id !== undefined &&
+    (typeof client_msg_id !== "string" ||
+      client_msg_id.length < 1 ||
+      client_msg_id.length > 64)
+  ) {
+    return NextResponse.json(
+      { error: "client_msg_id must be a string of 1-64 characters" },
+      { status: 400 }
+    );
+  }
+
   // 3. Authorisation checks sender must belong to the chatroom.
   const member = await isChatroomMember(chatroom_id, userId);
   if (!member) {
@@ -65,11 +78,22 @@ export async function POST(req: Request) {
   //    Realtime broadcasts this insert to subscribed clients automatically.
   const { data, error } = await supabaseAdmin
     .from("messages")
-    .insert({ chatroom_id, sender_id: userId, content: trimmed })
+    .insert({
+      chatroom_id,
+      sender_id: userId,
+      content: trimmed,
+      client_msg_id: client_msg_id ?? null,
+    })
     .select()
     .single();
 
   if (error) {
+    if (error.code === "23505") {
+      return NextResponse.json(
+        { error: "Message already sent" },
+        { status: 409 }
+      );
+    }
     console.error("message insert failed:", error);
     return NextResponse.json(
       { error: "Failed to send message" },

@@ -12,7 +12,9 @@ type Message = {
   type?: "user" | "system";
   content: string;
   created_at: string;
+  client_msg_id?: string | null; // set on messages we sent from this client
   pending?: boolean; // true while an optimistic message awaits confirmation
+  failed?: boolean; // true when the send failed and can be retried
 };
 
 export default function ChatWindow({
@@ -48,12 +50,16 @@ export default function ChatWindow({
           setMessages((prev) => {
             // If this echoes one of our own optimistic messages, replace the
             // temp row instead of adding a duplicate.
-            const tempIdx = prev.findIndex(
-              (m) =>
-                m.pending &&
-                m.sender_id === incoming.sender_id &&
-                m.content === incoming.content
-            );
+            const tempIdx = incoming.client_msg_id
+              ? prev.findIndex(
+                  (m) => m.client_msg_id === incoming.client_msg_id
+                )
+              : prev.findIndex(
+                  (m) =>
+                    m.pending &&
+                    m.sender_id === incoming.sender_id &&
+                    m.content === incoming.content
+                );
             if (tempIdx !== -1) {
               const next = [...prev];
               next[tempIdx] = incoming;
@@ -77,6 +83,51 @@ export default function ChatWindow({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+async function postMessage(clientMsgId: string, content: string) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.client_msg_id === clientMsgId
+          ? { ...m, pending: true, failed: false }
+          : m
+      )
+    );
+
+    try {
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatroom_id: chatroomId,
+          content,
+          client_msg_id: clientMsgId,
+        }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 409) return;
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.client_msg_id === clientMsgId
+              ? { ...m, pending: false, failed: true }
+              : m
+          )
+        );
+        const { error } = await res.json().catch(() => ({ error: "Failed" }));
+        console.error("send failed:", error);
+      }
+    } catch (err) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.client_msg_id === clientMsgId
+            ? { ...m, pending: false, failed: true }
+            : m
+        )
+      );
+      console.error("send error:", err);
+    }
+  }
+
   async function handleSend() {
     const content = draft.trim();
     if (!content || sending) return;
@@ -84,34 +135,20 @@ export default function ChatWindow({
     setSending(true);
     setDraft("");
 
-    // Optimistic: show the message immediately with a temporary id.
-    const tempId = `temp-${crypto.randomUUID()}`;
+    const clientMsgId = crypto.randomUUID();
     const optimistic: Message = {
-      id: tempId,
+      id: clientMsgId,
       chatroom_id: chatroomId,
       sender_id: currentUserId,
       content,
       created_at: new Date().toISOString(),
+      client_msg_id: clientMsgId,
       pending: true,
     };
     setMessages((prev) => [...prev, optimistic]);
 
     try {
-      const res = await fetch("/api/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatroom_id: chatroomId, content }),
-      });
-      if (!res.ok) {
-        // Roll back the optimistic message on failure.
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        const { error } = await res.json().catch(() => ({ error: "Failed" }));
-        console.error("send failed:", error);
-      }
-      // Error catching is also here to handle network errors or other unexpected issues.
-    } catch (err) {
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      console.error("send error:", err);
+      await postMessage(clientMsgId, content);
     } finally {
       setSending(false);
     }
@@ -151,14 +188,26 @@ export default function ChatWindow({
               key={m.id}
               className={`flex ${mine ? "justify-end" : "justify-start"}`}
             >
-              <div
-                className={`rounded-lg px-3 py-2 max-w-[75%] ${
-                  mine
-                    ? "bg-flame text-white"
-                    : "bg-cream text-ink border border-black/10"
-                } ${m.pending ? "opacity-60" : ""}`}
-              >
-                {m.content}
+              <div className="max-w-[75%]">
+                <div
+                  className={`rounded-lg px-3 py-2 ${
+                    mine
+                      ? "bg-flame text-white"
+                      : "bg-cream text-ink border border-black/10"
+                  } ${m.pending ? "opacity-60" : ""} ${
+                    m.failed ? "opacity-60 border border-red-500" : ""
+                  }`}
+                >
+                  {m.content}
+                </div>
+                {m.failed && m.client_msg_id && (
+                  <button
+                    onClick={() => postMessage(m.client_msg_id!, m.content)}
+                    className="mt-1 text-xs text-red-600 underline"
+                  >
+                    Couldn&apos;t send — tap to retry
+                  </button>
+                )}
               </div>
             </div>
           );
