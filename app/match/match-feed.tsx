@@ -2,6 +2,13 @@
 
 import { useState } from "react";
 import type { ScoredCandidate } from "@/lib/matching";
+import { toLabel } from "@/lib/labels";
+import {
+  buildAvailabilityGrid,
+  DAY_LABELS,
+  TIME_LABELS,
+  type Slot,
+} from "@/lib/availability";
 
 type Card = ScoredCandidate & { photoUrl: string | null };
 type RequestCard = {
@@ -10,9 +17,15 @@ type RequestCard = {
   photoUrl: string | null;
 };
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-export function MatchFeed({ cards, requestCards }: { cards: Card[]; requestCards: RequestCard[] }) {
+export function MatchFeed({
+  cards,
+  requestCards,
+  userAvailability,
+}: {
+  cards: Card[];
+  requestCards: RequestCard[];
+  userAvailability: Slot[];
+}) {
   const [tab, setTab] = useState<"discover" | "requests">("discover");
   const [requests, setRequests] = useState(requestCards);
   const [index, setIndex] = useState(0);
@@ -132,19 +145,26 @@ return (
 
                 {expanded && (
                   <div className="mt-3 grid gap-2 text-sm text-ink/80">
-                    {current.candidate.bio && <p>{current.candidate.bio}</p>}
-                    <p><span className="font-medium">Experience:</span> {current.candidate.experience}</p>
+                    {current.candidate.bio && (
+                      <p className="rounded-lg border border-ink/10 bg-cream/60 px-3 py-2 text-ink/80">
+                        {current.candidate.bio}
+                      </p>
+                    )}
+                    <p><span className="font-medium">Experience:</span> {toLabel(current.candidate.experience)}</p>
                     {current.candidate.workout_style && (
-                      <p><span className="font-medium">Style:</span> {current.candidate.workout_style}</p>
+                      <p><span className="font-medium">Style:</span> {toLabel(current.candidate.workout_style, "style")}</p>
                     )}
                     {current.candidate.gyms.length > 0 && (
                       <p><span className="font-medium">Gyms:</span> {current.candidate.gyms.map((g) => g.name).join(", ")}</p>
                     )}
                     {current.candidate.availability.length > 0 && (
-                      <p>
-                        <span className="font-medium">Available:</span>{" "}
-                        {current.candidate.availability.map((a) => `${DAY_LABELS[a.day]} ${a.time}`).join(", ")}
-                      </p>
+                      <div>
+                        <span className="font-medium">Available:</span>
+                        <AvailabilityGrid
+                          candidateAvailability={current.candidate.availability}
+                          userAvailability={userAvailability}
+                        />
+                      </div>
                     )}
                   </div>
                 )}
@@ -195,7 +215,8 @@ return (
                     {r.requester.age != null && <span className="font-normal">, {r.requester.age}</span>}
                   </p>
                   <p className="truncate text-sm text-ink/60">
-                    {r.requester.experience}{r.requester.workout_style ? ` · ${r.requester.workout_style}` : ""}
+                    {toLabel(r.requester.experience)}
+                    {r.requester.workout_style ? ` · ${toLabel(r.requester.workout_style, "style")}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
@@ -219,6 +240,71 @@ return (
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 7x3 availability grid. Solid flame = you're both free (you can actually
+ * meet); translucent flame = only they're free; empty = they're not free.
+ */
+function AvailabilityGrid({
+  candidateAvailability,
+  userAvailability,
+}: {
+  candidateAvailability: Slot[];
+  userAvailability: Slot[];
+}) {
+  const grid = buildAvailabilityGrid(candidateAvailability, userAvailability);
+
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1">
+        {/* Spacer above the day labels column */}
+        <div className="w-8" />
+        {TIME_LABELS.map((t) => (
+          <div key={t} className="flex-1 text-center text-xs text-ink/50">
+            {t}
+          </div>
+        ))}
+      </div>
+
+      {grid.map((row, dayIdx) => (
+        <div key={dayIdx} className="mt-1 flex items-center gap-1">
+          <div className="w-8 text-xs text-ink/50">{DAY_LABELS[dayIdx]}</div>
+          {row.map((state, timeIdx) => (
+            <div
+              key={timeIdx}
+              className="h-5 flex-1 rounded"
+              style={{
+                backgroundColor:
+                  state === "shared"
+                    ? "#f95311"
+                    : state === "candidate"
+                      ? "rgba(249, 83, 17, 0.25)"
+                      : "rgba(17, 17, 17, 0.05)",
+              }}
+            />
+          ))}
+        </div>
+      ))}
+
+      <div className="mt-2 flex flex-wrap gap-3 text-xs text-ink/50">
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-block h-3 w-3 rounded"
+            style={{ backgroundColor: "#f95311" }}
+          />{" "}
+          Both free
+        </span>
+        <span className="flex items-center gap-1">
+          <span
+            className="inline-block h-3 w-3 rounded"
+            style={{ backgroundColor: "rgba(249, 83, 17, 0.25)" }}
+          />{" "}
+          They&apos;re free
+        </span>
+      </div>
     </div>
   );
 }

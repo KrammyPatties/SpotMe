@@ -3,12 +3,16 @@ import type { WorkoutSession } from "@/lib/supabase/workouts";
 export function SessionCard({ session }: { session: WorkoutSession }) {
   const exerciseCount = session.exercises.length;
   const setCount = session.exercises.reduce((n, ex) => n + ex.sets.length, 0);
-  const date = new Date(session.performed_on).toLocaleDateString("en-SG", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  const date = new Date(session.performed_on + "T00:00:00Z").toLocaleDateString(
+    "en-GB",
+    {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    },
+  );
 
   return (
     <li className="overflow-hidden rounded-lg border border-ink/10 bg-white/60">
