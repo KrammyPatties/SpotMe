@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { isChatroomMember, getChatroomLabel } from "@/lib/chat";
+import { isChatroomMember, getChatroomLabel, getChatroomPhotoPaths } from "@/lib/chat";
+import { getPhotoUrl } from "@/lib/photos";
 import ChatWindow from "./chat-window";
 
 // Server component: authenticates, authorises and loads history
@@ -34,6 +35,8 @@ export default async function ChatroomPage({
   }
 
   const label = await getChatroomLabel(chatroomId, userId);
+  const photoPaths = await getChatroomPhotoPaths(chatroomId, userId);
+  const headerPhotoUrl = await getPhotoUrl(photoPaths[0] ?? null);
 
   return (
     <ChatWindow
@@ -41,6 +44,7 @@ export default async function ChatroomPage({
       currentUserId={userId}
       initialMessages={messages ?? []}
       label={label}
+      headerPhotoUrl={headerPhotoUrl}
     />
   );
 }
