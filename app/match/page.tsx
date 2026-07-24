@@ -87,7 +87,11 @@ export default async function MatchPage() {
   return (
     <main className="mx-auto max-w-md px-4 py-8">
       <h1 className="mb-4 text-2xl font-bold">Find a match</h1>
-      <MatchFeed cards={cards} requestCards={requestCards} />
+      <MatchFeed
+        cards={cards}
+        requestCards={requestCards}
+        userAvailability={user.availability}
+      />
     </main>
   );
 }
