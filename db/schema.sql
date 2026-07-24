@@ -216,3 +216,23 @@ alter table workout_sets alter column exercise_index drop default;
 -- normalise existing exercise names
 update workout_sets
 set exercise_name = initcap(exercise_name);
+
+-- added schedule_sessions table and status column
+create type session_status as enum ('proposed', 'confirmed', 'cancelled', 'completed');
+
+create table scheduled_sessions (
+  id uuid primary key default gen_random_uuid(),
+  chatroom_id uuid not null references chatrooms(id) on delete cascade,
+  proposer_id text not null references profiles(clerk_user_id) on delete cascade,
+  gym_id uuid references gyms(id) on delete set null,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  status session_status not null default 'proposed',
+  calendar_synced boolean not null default false,
+  created_at timestamptz not null default now(),
+  responded_at timestamptz,
+  constraint session_ends_after_start check (ends_at > starts_at)
+);
+
+create index idx_scheduled_sessions_chatroom on scheduled_sessions (chatroom_id, starts_at);
+create index idx_scheduled_sessions_status on scheduled_sessions (status, ends_at);
