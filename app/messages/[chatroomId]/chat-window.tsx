@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import RoomInfo from "./room-info";
+import Avatar from "@/app/components/avatar";
 
 type Message = {
   id: string;
@@ -22,11 +23,13 @@ export default function ChatWindow({
   currentUserId,
   initialMessages,
   label,
+  headerPhotoUrl,
 }: {
   chatroomId: string;
   currentUserId: string;
   initialMessages: Message[];
   label?: string;
+  headerPhotoUrl?: string | null;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
@@ -165,6 +168,7 @@ async function postMessage(clientMsgId: string, content: string) {
           <span aria-hidden="true">←</span>
           <span className="text-sm">Back</span>
         </Link>
+        <Avatar url={headerPhotoUrl ?? null} name={label ?? "Chat"} size={32} />
         {label && <h1 className="font-semibold truncate">{label}</h1>}
         <div className="ml-auto flex items-center gap-3">
           <RoomInfo chatroomId={chatroomId} currentName={label ?? "Chat"} />

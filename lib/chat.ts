@@ -71,6 +71,38 @@ export async function getChatroomLabel(
   return names.length > 3 ? `${shown}…` : shown;
 }
 
+/**
+ * The other members' photo paths for a room, in member order.
+ * Companion to getChatroomLabel, the header shows both.
+ */
+export async function getChatroomPhotoPaths(
+  chatroomId: string,
+  viewerId: string
+): Promise<string[]> {
+  const { data: members } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("clerk_user_id")
+    .eq("chatroom_id", chatroomId);
+
+  const otherIds = (members ?? [])
+    .map((m) => m.clerk_user_id)
+    .filter((id) => id !== viewerId);
+  if (otherIds.length === 0) return [];
+
+  const { data: profiles } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, photo_path")
+    .in("clerk_user_id", otherIds);
+
+  const photoById = new Map(
+    (profiles ?? []).map((p) => [p.clerk_user_id, p.photo_path])
+  );
+
+  return otherIds
+    .map((id) => photoById.get(id))
+    .filter((p): p is string => Boolean(p));
+}
+
 // Full roster of a room (for the members panel). Requester must be a member.
 export async function getChatroomMembers(
   chatroomId: string,
@@ -141,6 +173,7 @@ export type Conversation = {
   chatroomId: string;
   label: string;          // other member's name (1:1) or room name (group)
   isGroup: boolean;
+  photoPaths: string[];   // other members' photo paths, in member order
   lastMessage: string | null;
   lastMessageAt: string | null;
 };
@@ -191,12 +224,21 @@ export async function getConversationsForUser(
   const { data: profiles } = otherIds.length
     ? await supabaseAdmin
         .from("profiles")
-        .select("clerk_user_id, display_name")
+        .select("clerk_user_id, display_name, photo_path")
         .in("clerk_user_id", otherIds)
-    : { data: [] as { clerk_user_id: string; display_name: string }[] };
+    : {
+        data: [] as {
+          clerk_user_id: string;
+          display_name: string;
+          photo_path: string | null;
+        }[],
+      };
  
   const nameById = new Map(
     (profiles ?? []).map((p) => [p.clerk_user_id, p.display_name])
+  );
+  const photoById = new Map(
+    (profiles ?? []).map((p) => [p.clerk_user_id, p.photo_path])
   );
  
   // 5. Latest message per room for sorting.
@@ -237,12 +279,17 @@ export async function getConversationsForUser(
     } else {
       label = `Group (${memberIds.length})`;
     }
- 
+
+    const photoPaths = others
+      .map((id) => photoById.get(id))
+      .filter((p): p is string => Boolean(p));
+    
     const last = lastByRoom.get(room.id) ?? null;
     return {
       chatroomId: room.id,
       label,
       isGroup,
+      photoPaths,
       lastMessage: last?.content ?? null,
       lastMessageAt: last?.created_at ?? null,
     };
