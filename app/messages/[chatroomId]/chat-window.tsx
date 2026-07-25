@@ -24,12 +24,14 @@ export default function ChatWindow({
   initialMessages,
   label,
   headerPhotoUrl,
+  children,
 }: {
   chatroomId: string;
   currentUserId: string;
   initialMessages: Message[];
   label?: string;
   headerPhotoUrl?: string | null;
+  children?: React.ReactNode;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
@@ -173,7 +175,9 @@ async function postMessage(clientMsgId: string, content: string) {
         <div className="ml-auto flex items-center gap-3">
           <RoomInfo chatroomId={chatroomId} currentName={label ?? "Chat"} />
         </div>
-        </div>
+      </div>
+
+      {children}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((m) => {
