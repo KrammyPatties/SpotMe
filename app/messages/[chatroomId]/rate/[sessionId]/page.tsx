@@ -4,8 +4,6 @@ import { getRatingTarget } from "@/lib/supabase/ratings";
 import RatingForm from "./rating-form";
 import { getPendingRating } from "@/lib/supabase/ratings";
 
-// app/messages/[chatroomId]/rate/[sessionId]/page.tsx
-//
 // Server component: authenticates and resolves the rating target.
 // getRatingTarget returns null unless the session exists, has completed, the
 // user is a member, and they still owe at least one rating — so it doubles as

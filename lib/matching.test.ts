@@ -12,6 +12,7 @@ import {
   gymsInRange
 } from "./matching";
 import type { Candidate } from "./supabase/candidates";
+import { aggregateRating } from "./ratings";
 
 // Helper: build a minimal candidate with just the fields a test needs.
 function makeUser(overrides: Partial<ScoringUser> = {}): ScoringUser {
@@ -241,7 +242,7 @@ describe("haversineKm", () => {
 
 // Tests for scoreCandidate function (overall score combining all factors)
 describe("scoreCandidate", () => {
-  it("returns a breakdown with all five signals", () => {
+  it("returns a breakdown with all six signals", () => {
     const user = makeUser();
     const candidate = makeUser();
     const result = scoreCandidate(user, candidate, noCtx);
@@ -250,6 +251,7 @@ describe("scoreCandidate", () => {
     expect(result.breakdown).toHaveProperty("workoutStyle");
     expect(result.breakdown).toHaveProperty("experiencePref");
     expect(result.breakdown).toHaveProperty("genderPref");
+    expect(result.breakdown).toHaveProperty("rating");
   });
 
   it("includes the candidate in the result", () => {
@@ -293,7 +295,10 @@ describe("scoreCandidate", () => {
     expect(score).toBeLessThanOrEqual(1);
   });
 
-  it("a perfect match scores 1", () => {
+  // 1.0 is unreachable by design: shrinkage means no finite rating history
+  // reaches an adjusted 5, so the rating signal never contributes its full
+  // 0.20. An unrated candidate contributes 0.875 x 0.20 = 0.175.
+  it("a perfect match with no rating history scores 0.975", () => {
     const user = makeUser({
       availability: [{ day: 1, time: "evening" }],
       gyms: [gym("a")],
@@ -308,7 +313,7 @@ describe("scoreCandidate", () => {
       experience: "advanced",
       gender: "female",
     });
-    expect(scoreCandidate(user, perfect, noCtx).score).toBeCloseTo(1, 5);
+    expect(scoreCandidate(user, perfect, noCtx).score).toBeCloseTo(0.975, 5);
   });
 });
 
@@ -463,5 +468,61 @@ describe("scoreSharedGym (with ActiveSG fallback)", () => {
     activeSgGyms: [geoGym("Sengkang ActiveSG", "ActiveSG", 1.355, 103.855)],
   });
   expect(result.sharedActiveSg).toBe("Sengkang ActiveSG");
+  });
+});
+
+// Tests for the rating signal in scoring
+describe("rating signal", () => {
+  const base = { availability: [{ day: 1, time: "evening" }], gyms: [gym("a")] };
+
+  function ctxWith(entries: [string, number[]][]) {
+    return {
+      activeSgGyms: [],
+      radiusKm: 10,
+      ratings: new Map(
+        entries.map(([id, scores]) => [id, aggregateRating(scores)]),
+      ),
+    };
+  }
+
+  it("treats a candidate with no rating entry as unrated", () => {
+    const user = makeUser(base);
+    const candidate = makeUser({ ...base, clerk_user_id: "unrated" });
+    expect(scoreCandidate(user, candidate, ctxWith([])).breakdown.rating)
+      .toBeCloseTo(0.875, 5);
+  });
+
+  it("ranks a well-rated candidate above an identical unrated one", () => {
+    const user = makeUser(base);
+    const good = makeUser({ ...base, clerk_user_id: "good", display_name: "Good" });
+    const unknown = makeUser({ ...base, clerk_user_id: "unknown", display_name: "Unknown" });
+
+    const ctx = ctxWith([["good", [5, 5, 5, 5, 5]]]);
+    const ranked = rankCandidates(user, [unknown, good], ctx);
+    expect(ranked[0].candidate.display_name).toBe("Good");
+  });
+
+  it("ranks a poorly-rated candidate below an identical unrated one", () => {
+    const user = makeUser(base);
+    const bad = makeUser({ ...base, clerk_user_id: "bad", display_name: "Bad" });
+    const unknown = makeUser({ ...base, clerk_user_id: "unknown", display_name: "Unknown" });
+
+    const ctx = ctxWith([["bad", [1, 1]]]);
+    const ranked = rankCandidates(user, [bad, unknown], ctx);
+    expect(ranked[0].candidate.display_name).toBe("Unknown");
+  });
+
+  // The design intent, pinned: this is a safety filter, not a leaderboard.
+  it("punishes bad ratings more than it rewards good ones", () => {
+    const user = makeUser(base);
+    const c = (id: string) => makeUser({ ...base, clerk_user_id: id });
+
+    const ctx = ctxWith([["good", Array(10).fill(5)], ["bad", [1, 1]]]);
+    const unrated = scoreCandidate(user, c("none"), ctx).score;
+    const good = scoreCandidate(user, c("good"), ctx).score;
+    const bad = scoreCandidate(user, c("bad"), ctx).score;
+
+    expect(good - unrated).toBeLessThan(0.03);
+    expect(unrated - bad).toBeGreaterThan(0.05);
   });
 });

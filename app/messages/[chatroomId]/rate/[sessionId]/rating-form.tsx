@@ -1,7 +1,5 @@
 "use client";
 
-// app/messages/[chatroomId]/rate/[sessionId]/rating-form.tsx
-//
 // One submit covers every member still awaiting a rating. Stars are required,
 // written feedback is optional.
 //

@@ -1,9 +1,3 @@
-// app/components/rating-badge.tsx
-//
-// Aggregate rating display. Presentational only — takes a computed aggregate
-// and renders it. Never shows review text: written feedback is private by
-// design (see lib/ratings.ts and the rating form).
-
 import type { RatingAggregate } from "@/lib/ratings";
 
 type Props = {

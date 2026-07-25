@@ -9,12 +9,18 @@ import {
   TIME_LABELS,
   type Slot,
 } from "@/lib/availability";
+import RatingBadge from "@/app/components/rating-badge";
+import type { RatingAggregate } from "@/lib/ratings";
 
-type Card = ScoredCandidate & { photoUrl: string | null };
+type Card = ScoredCandidate & {
+  photoUrl: string | null;
+  ratingAggregate: RatingAggregate | null;
+};
 type RequestCard = {
   matchId: string;
   requester: { display_name: string; age: number | null; experience: string; bio: string | null; workout_style: string | null };
   photoUrl: string | null;
+  ratingAggregate: RatingAggregate | null;
 };
 
 export function MatchFeed({
@@ -125,6 +131,11 @@ return (
               </div>
 
               <div className="p-4">
+                {current.ratingAggregate && (
+                  <div className="mb-3">
+                    <RatingBadge aggregate={current.ratingAggregate} size="sm" />
+                  </div>
+                )}
                 {traits.length > 0 ? (
                   <ul className="flex flex-wrap gap-2">
                     {traits.map((t) => (
@@ -153,6 +164,9 @@ return (
                     <p><span className="font-medium">Experience:</span> {toLabel(current.candidate.experience)}</p>
                     {current.candidate.workout_style && (
                       <p><span className="font-medium">Style:</span> {toLabel(current.candidate.workout_style, "style")}</p>
+                    )}
+                    {current.ratingAggregate && (
+                      <RatingBadge aggregate={current.ratingAggregate} size="sm" />
                     )}
                     {current.candidate.gyms.length > 0 && (
                       <p><span className="font-medium">Gyms:</span> {current.candidate.gyms.map((g) => g.name).join(", ")}</p>
