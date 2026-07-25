@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChatroomSession, UserGym } from "@/lib/supabase/sessions";
+import { PendingRating } from "@/lib/supabase/ratings";
 
 type Props = {
   chatroomId: string;
   currentUserId: string;
   sessions: ChatroomSession[];
   userGyms: UserGym[];
+  pendingRating: PendingRating | null;
 };
 
 const DURATIONS = [
@@ -45,6 +47,7 @@ export default function SessionPanel({
   currentUserId,
   sessions,
   userGyms,
+  pendingRating,
 }: Props) {
   const router = useRouter();
 
@@ -142,6 +145,26 @@ export default function SessionPanel({
         <p className="mt-2 rounded border border-flame/40 bg-flame/10 px-2 py-1 text-xs text-ink">
           {error}
         </p>
+      )}
+
+      {pendingRating && (
+        <a
+          href={`/messages/${chatroomId}/rate/${pendingRating.sessionId}`}
+          className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-flame/40 px-3 py-2"
+          style={{ backgroundColor: "rgba(249, 83, 17, 0.08)" }}
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-ink">
+              Rate your session
+            </span>
+            <span className="block truncate text-xs text-ink/60">
+              with {pendingRating.pendingMembers.map((m) => m.displayName).join(", ")}
+            </span>
+          </span>
+          <span className="shrink-0 rounded-full bg-flame px-3 py-1 text-xs font-semibold text-white">
+            Rate
+          </span>
+        </a>
       )}
 
       {formOpen && (
