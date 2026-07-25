@@ -27,7 +27,7 @@ function localToday(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function formatSlot(startsAt: string, endsAt: string): string {
+export function formatSlot(startsAt: string, endsAt: string): string {
   const start = new Date(startsAt);
   const end = new Date(endsAt);
 
@@ -131,7 +131,12 @@ export default function SessionPanel({
   return (
     <section className="border-b border-ink/10 bg-cream px-4 py-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">Sessions</h2>
+        <a
+          href={`/messages/${chatroomId}/sessions`}
+          className="text-sm font-semibold text-ink hover:text-flame"
+        >
+          Sessions →
+        </a>
         <button
           type="button"
           onClick={() => setFormOpen((v) => !v)}

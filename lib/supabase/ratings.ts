@@ -177,3 +177,52 @@ export async function getPendingRating(
 
   return target ? getRatingTarget(target.id, userId) : null;
 }
+
+/**
+ * Every session in this room the user still owes a rating for.
+ *
+ * getPendingRating returns one session for the chatroom prompt; the log needs
+ * the whole set to split its tabs. Both run through pendingRatees, so the tab
+ * split can't drift from the prompt.
+ */
+export async function getPendingRatingSessionIds(
+  chatroomId: string,
+  userId: string,
+): Promise<string[]> {
+  const { data: sessions } = await supabaseAdmin
+    .from("scheduled_sessions")
+    .select("id")
+    .eq("chatroom_id", chatroomId)
+    .eq("status", "completed");
+
+  if (!sessions?.length) return [];
+
+  const sessionIds = sessions.map((s) => s.id);
+
+  const [{ data: members }, { data: existing }] = await Promise.all([
+    supabaseAdmin
+      .from("chatroom_members")
+      .select("clerk_user_id")
+      .eq("chatroom_id", chatroomId),
+    supabaseAdmin
+      .from("ratings")
+      .select("session_id, ratee_id")
+      .eq("rater_id", userId)
+      .in("session_id", sessionIds),
+  ]);
+
+  const memberIds = (members ?? []).map((m) => m.clerk_user_id);
+  if (!memberIds.includes(userId)) return [];
+
+  const ratedBySession = new Map<string, { ratee_id: string }[]>();
+  for (const row of existing ?? []) {
+    const list = ratedBySession.get(row.session_id) ?? [];
+    list.push({ ratee_id: row.ratee_id });
+    ratedBySession.set(row.session_id, list);
+  }
+
+  return sessionIds.filter(
+    (id) =>
+      pendingRatees(memberIds, userId, ratedBySession.get(id) ?? []).length > 0,
+  );
+}
