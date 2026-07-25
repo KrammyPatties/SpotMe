@@ -236,3 +236,18 @@ create table scheduled_sessions (
 
 create index idx_scheduled_sessions_chatroom on scheduled_sessions (chatroom_id, starts_at);
 create index idx_scheduled_sessions_status on scheduled_sessions (status, ends_at);
+
+create table ratings (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references scheduled_sessions(id) on delete cascade,
+  rater_id text not null references profiles(clerk_user_id) on delete cascade,
+  ratee_id text not null references profiles(clerk_user_id) on delete cascade,
+  score int not null check (score between 1 and 5),
+  review text check (review is null or char_length(review) <= 1000),
+  created_at timestamptz not null default now(),
+  constraint no_self_rating check (rater_id <> ratee_id),
+  constraint one_rating_per_pair_per_session unique (session_id, rater_id, ratee_id)
+);
+
+create index idx_ratings_ratee on ratings (ratee_id);
+create index idx_ratings_session_rater on ratings (session_id, rater_id);
