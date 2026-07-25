@@ -1,16 +1,16 @@
 import { isUuid } from "@/lib/uuid";
 
-/** Neutral score assumed for a user with no ratings yet (midpoint of 1-5). */
-export const RATING_PRIOR = 3;
+/** Neutral score assumed for a user with no ratings yet. */
+export const RATING_PRIOR = 4.5;
 
 /**
- * Shrinkage weight - how many "virtual" prior ratings a user starts with.
+ * Shrinkage weight — how many "virtual" prior ratings a user starts with.
  *
- * At C = 3, one 5-star rating lands you at 3.5 rather than 5; ten of them get
- * you to ~4.5. Confidence in the average scales with how much data backs it,
- * the same honesty guard decayForCount applies to the analytics trend fit.
+ * Lowered to 2 so genuine bad feedback lands fast: one 1-star drops a user
+ * from 4.5 to 3.33, two drop them to 2.75. Confidence still scales with data
+ * volume, the same guard decayForCount applies to the analytics trend fit.
  */
-export const RATING_SHRINKAGE = 3;
+export const RATING_SHRINKAGE = 2;
 
 export const MIN_SCORE = 1;
 export const MAX_SCORE = 5;

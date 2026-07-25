@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { OnboardingForm } from "../onboarding/onboarding-form";
 import { getPhotoUrl } from "@/lib/photos";
+import { getRatingAggregate } from "@/lib/supabase/ratings";
+import RatingBadge from "@/app/components/rating-badge";
 
 export default async function ProfilePage() {
   const { userId } = await auth();
@@ -40,10 +42,16 @@ export default async function ProfilePage() {
 
   const photoUrl = await getPhotoUrl(profile.photo_path);
 
+  const rating = await getRatingAggregate(userId);
+
   return (
     <main className="mx-auto max-w-lg px-4 py-10">
       <h1 className="text-3xl font-bold">Your profile</h1>
       <p className="mt-1 text-ink/70">Edit your profile</p>
+
+      <div className="mt-2">
+        <RatingBadge aggregate={rating} />
+      </div>
 
       <OnboardingForm
         gyms={gyms ?? []}

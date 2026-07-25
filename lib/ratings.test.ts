@@ -164,29 +164,29 @@ describe("aggregateRating", () => {
     expect(agg.adjusted).toBe(RATING_PRIOR);
   });
 
-  // (3 x 3 + 5) / (3 + 1) = 14 / 4
+  // (2 × 4.5 + 5) / 3 = 4.667
   it("shrinks a single 5-star rating toward neutral", () => {
     const agg = aggregateRating([5]);
     expect(agg.mean).toBe(5);
-    expect(agg.adjusted).toBeCloseTo(3.5, 5);
+    expect(agg.adjusted).toBeCloseTo(4.667, 3);
   });
 
-  // (9 + 50) / 13
+  // (9 + 50) / 12 = 4.917:
   it("moves closer to the true mean as ratings accumulate", () => {
     const agg = aggregateRating(Array(10).fill(5));
     expect(agg.mean).toBe(5);
-    expect(agg.adjusted).toBeCloseTo(4.538, 3);
+    expect(agg.adjusted).toBeCloseTo(4.917, 3);
   });
 
   it("leaves an all-neutral history exactly at the prior", () => {
-    const agg = aggregateRating([3, 3, 3, 3]);
+    const agg = aggregateRating([4, 5, 4, 5]);
     expect(agg.adjusted).toBeCloseTo(RATING_PRIOR, 5);
   });
 
-  // (9 + 1) / 4 — one bad rating doesn't sink someone to the floor either.
+  // (9 + 1) / 3 — one bad rating moves you meaningfully, by design.
   it("shrinks a single 1-star rating toward neutral", () => {
     const agg = aggregateRating([1]);
-    expect(agg.adjusted).toBeCloseTo(2.5, 5);
+    expect(agg.adjusted).toBeCloseTo(3.333, 3);
   });
 
   it("keeps adjusted within the score range", () => {
@@ -197,8 +197,8 @@ describe("aggregateRating", () => {
 
 describe("scoreRating", () => {
   // The cold-start guard: unrated must be mid-scale, not zero.
-  it("maps the neutral prior to 0.5", () => {
-    expect(scoreRating(RATING_PRIOR)).toBeCloseTo(0.5, 5);
+  it("maps the neutral prior to 0.875", () => {
+    expect(scoreRating(RATING_PRIOR)).toBeCloseTo(0.875, 5);
   });
 
   it("maps the range endpoints to 0 and 1", () => {
@@ -215,8 +215,8 @@ describe("scoreRating", () => {
     expect(scoreRating(4)).toBeGreaterThan(scoreRating(3));
   });
 
-  it("gives an unrated user exactly 0.5 end to end", () => {
-    expect(scoreRating(aggregateRating([]).adjusted)).toBeCloseTo(0.5, 5);
+  it("gives an unrated user exactly 0.875 end to end", () => {
+    expect(scoreRating(aggregateRating([]).adjusted)).toBeCloseTo(0.875, 5);
   });
 });
 
@@ -246,5 +246,14 @@ describe("pendingRatees", () => {
 
   it("returns empty for a solo room", () => {
     expect(pendingRatees(["me"], "me", [])).toEqual([]);
+  });
+
+  it("punishes bad ratings harder than it rewards good ones", () => {
+    const unrated = scoreRating(aggregateRating([]).adjusted);
+    const veteran = scoreRating(aggregateRating(Array(10).fill(5)).adjusted);
+    const oneBad = scoreRating(aggregateRating([1]).adjusted);
+
+    expect(veteran - unrated).toBeLessThan(0.15);   // tenure barely helps
+    expect(unrated - oneBad).toBeGreaterThan(0.25); // bad behaviour hurts
   });
 });
