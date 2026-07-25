@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { isChatroomMember, getChatroomLabel, getChatroomPhotoPaths } from "@/lib/chat";
 import { getPhotoUrl } from "@/lib/photos";
 import ChatWindow from "./chat-window";
+import SessionPanel from "./session-panel";
+import { getSessionsForChatroom, ensureCompletedSessions, getUserGyms } from "@/lib/supabase/sessions";
 
 // Server component: authenticates, authorises and loads history
 // for the client component live view.
@@ -30,6 +32,12 @@ export default async function ChatroomPage({
     .order("created_at", { ascending: true })
     .limit(100);
 
+  await ensureCompletedSessions(chatroomId);
+  const [sessions, userGyms] = await Promise.all([
+    getSessionsForChatroom(chatroomId),
+    getUserGyms(userId),
+  ]);
+
   if (error) {
     console.error("history load failed:", error);
   }
@@ -45,6 +53,13 @@ export default async function ChatroomPage({
       initialMessages={messages ?? []}
       label={label}
       headerPhotoUrl={headerPhotoUrl}
-    />
+    >
+      <SessionPanel
+        chatroomId={chatroomId}
+        currentUserId={userId}
+        sessions={sessions}
+        userGyms={userGyms}
+      />
+    </ChatWindow>
   );
 }
