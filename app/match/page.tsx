@@ -5,6 +5,7 @@ import { getCandidates, getIncomingRequests } from "@/lib/supabase/candidates";
 import { rankCandidates, type ScoringUser } from "@/lib/matching";
 import { getPhotoUrls } from "@/lib/photos";
 import { MatchFeed } from "./match-feed";
+import { getRatingAggregates } from "@/lib/supabase/ratings";
 
 export default async function MatchPage() {
   const { userId } = await auth();
@@ -54,10 +55,17 @@ export default async function MatchPage() {
 
   // 2. Get eligible candidates and rank them.
   const candidates = await getCandidates(userId);
+
+  // Batched — one query for every candidate's rating, not one per card.
+  const ratings = await getRatingAggregates(
+    candidates.map((c) => c.clerk_user_id),
+  );
+
   const ranked = rankCandidates(user, candidates, {
-  activeSgGyms,
-  radiusKm: user.match_radius_km,
-});
+    activeSgGyms,
+    radiusKm: user.match_radius_km,
+    ratings,
+  });
 
   // 3. Batch-sign candidate photos (one call), attach a viewable URL to each.
   const photoPaths = candidates
@@ -68,6 +76,7 @@ export default async function MatchPage() {
   const cards = ranked.map((r) => ({
     ...r,
     photoUrl: r.candidate.photo_path ? photoMap.get(r.candidate.photo_path) ?? null : null,
+    ratingAggregate: ratings.get(r.candidate.clerk_user_id) ?? null,
   }));
 
   // 4. Incoming pending requests (people who liked you), with signed photos.
@@ -77,10 +86,15 @@ export default async function MatchPage() {
     .filter((p): p is string => !!p);
   const reqPhotoMap = await getPhotoUrls(reqPhotoPaths);
 
+  const reqRatings = await getRatingAggregates(
+    requests.map((r) => r.requester!.clerk_user_id),
+  );
+
   const requestCards = requests.map((r) => ({
     matchId: r.matchId,
     requester: r.requester!,
     photoUrl: r.requester!.photo_path ? reqPhotoMap.get(r.requester!.photo_path) ?? null : null,
+    ratingAggregate: reqRatings.get(r.requester!.clerk_user_id) ?? null,
   }));
 
 

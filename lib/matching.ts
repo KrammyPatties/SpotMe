@@ -1,4 +1,6 @@
 import type { Candidate } from "./supabase/candidates";
+import { scoreRating, aggregateRating } from "@/lib/ratings";
+import type { RatingAggregate } from "@/lib/ratings";
 /**
  * The user we're matching FOR. Same as a Candidate, plus their match
  * preferences (which only the user side of scoring needs - candidates
@@ -100,6 +102,12 @@ export function scoreSharedGym(
 export type ScoringContext = {
   activeSgGyms: Candidate["gyms"];  // all ActiveSG gyms with coordinates
   radiusKm: number;                 // the user's match_radius_km
+  /**
+   * Aggregate rating per candidate id. Optional: a caller that omits it
+   * scores every candidate as unrated, which is the neutral prior. Keeps the
+   * scorer usable without a rating fetch and leaves existing tests valid.
+   */
+  ratings?: Map<string, RatingAggregate>;
 };
 
 /**
@@ -153,6 +161,22 @@ export function scoreGenderPref(user: ScoringUser, candidate: Candidate): number
 }
 
 /**
+ * Rating score (0-1): how the community has rated this candidate.
+ *
+ * Unrated candidates fall back to the neutral prior, so a new user is treated
+ * as fine-until-proven-otherwise rather than worst-in-class. The signal is
+ * punitive by design — see RATING_PRIOR in lib/ratings.ts.
+ */
+export function scoreCandidateRating(
+  candidate: Candidate,
+  ctx: ScoringContext,
+): number {
+  const aggregate =
+    ctx.ratings?.get(candidate.clerk_user_id) ?? aggregateRating([]);
+  return scoreRating(aggregate.adjusted);
+}
+
+/**
  * Straight-line distance between two lat/lng points, in km
  * Standard haversine formula
  *
@@ -179,11 +203,12 @@ export function haversineKm(
 
 /** Weighted contribution of each signal to the total. Sums to 1 -> total is 0-1. */
 const WEIGHTS = {
-  availability: 0.30,   // dominant: can we meet at the same time
-  sharedGym: 0.30,      // dominant: is there a place we'll both be
+  availability: 0.25,   // dominant: can we meet at the same time
+  sharedGym: 0.25,      // dominant: is there a place we'll both be
+  rating: 0.20,         // strong: is this person safe and pleasant to train with
   workoutStyle: 0.15,   // moderate
-  experiencePref: 0.15, // moderate
-  genderPref: 0.10,     // light
+  experiencePref: 0.10, // moderate
+  genderPref: 0.05,     // light
 } as const;
 
 export type ScoredCandidate = {
@@ -195,6 +220,7 @@ export type ScoredCandidate = {
     workoutStyle: number;
     experiencePref: number;
     genderPref: number;
+    rating: number;
   };
   sharedActiveSg: string | null;
 };
@@ -212,6 +238,7 @@ export function scoreCandidate(user: ScoringUser, candidate: Candidate, ctx: Sco
     workoutStyle: scoreWorkoutStyle(user, candidate),
     experiencePref: scoreExperiencePref(user, candidate),
     genderPref: scoreGenderPref(user, candidate),
+    rating: scoreCandidateRating(candidate, ctx),
   };
 
   const score =
@@ -219,8 +246,8 @@ export function scoreCandidate(user: ScoringUser, candidate: Candidate, ctx: Sco
     breakdown.sharedGym * WEIGHTS.sharedGym +
     breakdown.workoutStyle * WEIGHTS.workoutStyle +
     breakdown.experiencePref * WEIGHTS.experiencePref +
-    breakdown.genderPref * WEIGHTS.genderPref;
-
+    breakdown.genderPref * WEIGHTS.genderPref +
+    breakdown.rating * WEIGHTS.rating;
   return { candidate, score, breakdown, sharedActiveSg: gym.sharedActiveSg };  // ← carry it through
 }
 
