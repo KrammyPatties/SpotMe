@@ -251,3 +251,60 @@ create table ratings (
 
 create index idx_ratings_ratee on ratings (ratee_id);
 create index idx_ratings_session_rater on ratings (session_id, rater_id);
+
+-- feat: moderation and consent-based data collection
+
+-- 1. Reports: one user reporting another.
+create type report_status as enum ('open', 'actioned', 'dismissed');
+
+create table reports (
+  id              uuid primary key default gen_random_uuid(),
+  reporter_id     text not null references profiles(clerk_user_id) on delete cascade,
+  reported_id     text not null references profiles(clerk_user_id) on delete cascade,
+  reason          text not null check (char_length(reason) between 1 and 1000),
+  status          report_status not null default 'open',
+  created_at      timestamptz not null default now(),
+  resolved_at     timestamptz,
+  resolved_by     text references profiles(clerk_user_id) on delete set null,
+  resolution_note text check (resolution_note is null or char_length(resolution_note) <= 1000),
+  constraint no_self_report check (reporter_id <> reported_id)
+);
+
+-- One open report per pair.
+create unique index idx_reports_open_pair
+  on reports (reporter_id, reported_id) where status = 'open';
+
+create index idx_reports_status_created on reports (status, created_at desc);
+create index idx_reports_reported       on reports (reported_id);
+
+-- 2. Moderation actions: append-only audit log.
+create type moderation_action_type as enum ('warning', 'suspension', 'lift');
+
+create table moderation_actions (
+  id             uuid primary key default gen_random_uuid(),
+  target_user_id text not null references profiles(clerk_user_id) on delete cascade,
+  admin_id       text references profiles(clerk_user_id) on delete set null,
+  action         moderation_action_type not null,
+  reason         text not null check (char_length(reason) between 1 and 1000),
+  expires_at     timestamptz,                                  -- null for warning and lift
+  report_id      uuid references reports(id) on delete set null, -- null if raised by a rating flag
+  created_at     timestamptz not null default now(),
+  constraint suspension_has_expiry check (
+    (action =  'suspension' and expires_at is not null) or
+    (action <> 'suspension' and expires_at is null)
+  )
+);
+
+create index idx_moderation_actions_target
+  on moderation_actions (target_user_id, created_at desc);
+
+-- 3. Consent to anonymised data collection.
+alter table profiles
+  add column data_consent    boolean not null default false,
+  add column data_consent_at timestamptz;
+
+select table_name from information_schema.tables
+where table_name in ('reports', 'moderation_actions');
+
+select column_name from information_schema.columns
+where table_name = 'profiles' and column_name like 'data_consent%';

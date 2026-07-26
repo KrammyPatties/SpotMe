@@ -3,12 +3,16 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { isChatroomMember } from "@/lib/chat";
 import { validateSessionProposal } from "@/lib/scheduling";
+import { assertNotSuspended } from "@/lib/moderation-guard";
 
 export async function POST(req: Request) {
   const { isAuthenticated, userId } = await auth();
   if (!isAuthenticated) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const suspended = await assertNotSuspended(userId);
+  if (suspended) return suspended;
 
   let body: unknown;
   try {

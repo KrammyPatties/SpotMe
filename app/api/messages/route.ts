@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { isChatroomMember } from "@/lib/chat";
 import { UUID_RE } from "@/lib/uuid";
+import { assertNotSuspended } from "@/lib/moderation-guard";
 
 const MAX_CONTENT_LENGTH = 2000;
 
@@ -12,6 +13,9 @@ export async function POST(req: Request) {
   if (!isAuthenticated) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const suspended = await assertNotSuspended(userId);
+  if (suspended) return suspended;
 
   // 2. Parse and validate input before touching the database.
   let body: unknown;
