@@ -36,7 +36,8 @@ export async function ensureCompletedSessions(
 }
 
 export async function getSessionsForChatroom(
-  chatroomId: string
+  chatroomId: string,
+  statuses: SessionStatus[] = ["proposed", "confirmed"],
 ): Promise<ChatroomSession[]> {
   const { data: sessions, error } = await supabaseAdmin
     .from("scheduled_sessions")
@@ -44,7 +45,7 @@ export async function getSessionsForChatroom(
       "id, chatroom_id, proposer_id, gym_id, starts_at, ends_at, status, created_at"
     )
     .eq("chatroom_id", chatroomId)
-    .neq("status", "cancelled")
+    .in("status", statuses)
     .order("starts_at", { ascending: true });
 
   if (error) {
