@@ -5,6 +5,8 @@ import { OnboardingForm } from "../onboarding/onboarding-form";
 import { getPhotoUrl } from "@/lib/photos";
 import { getRatingAggregate } from "@/lib/supabase/ratings";
 import RatingBadge from "@/app/components/rating-badge";
+import Link from "next/link";
+import { isAdmin } from "@/lib/admin";
 
 export default async function ProfilePage() {
   const { userId } = await auth();
@@ -53,6 +55,15 @@ export default async function ProfilePage() {
         <RatingBadge aggregate={rating} />
       </div>
 
+      {isAdmin(userId) && (
+        <Link
+          href="/admin"
+          className="mt-6 block rounded-xl border border-flame/30 bg-flame/10 px-4 py-3 text-center text-sm font-medium text-flame"
+        >
+          Moderation dashboard
+        </Link>
+      )}
+      
       <OnboardingForm
         gyms={gyms ?? []}
         initial={{

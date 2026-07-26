@@ -11,6 +11,7 @@ import {
 } from "@/lib/availability";
 import RatingBadge from "@/app/components/rating-badge";
 import type { RatingAggregate } from "@/lib/ratings";
+import ReportDialog from "@/app/components/report-dialog";
 
 type Card = ScoredCandidate & {
   photoUrl: string | null;
@@ -165,9 +166,6 @@ return (
                     {current.candidate.workout_style && (
                       <p><span className="font-medium">Style:</span> {toLabel(current.candidate.workout_style, "style")}</p>
                     )}
-                    {current.ratingAggregate && (
-                      <RatingBadge aggregate={current.ratingAggregate} size="sm" />
-                    )}
                     {current.candidate.gyms.length > 0 && (
                       <p><span className="font-medium">Gyms:</span> {current.candidate.gyms.map((g) => g.name).join(", ")}</p>
                     )}
@@ -180,6 +178,13 @@ return (
                         />
                       </div>
                     )}
+
+                    <div className="mt-1 border-t border-ink/10 pt-2">
+                      <ReportDialog
+                        reportedId={current.candidate.clerk_user_id}
+                        reportedName={current.candidate.display_name}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
