@@ -12,5 +12,11 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: "node",
     env: loadEnv(mode, process.cwd(), ""),
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.next/**",
+      "**/e2e/**",
+    ],
   },
 }));
