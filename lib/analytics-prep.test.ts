@@ -57,14 +57,13 @@ describe("prepareAnalytics", () => {
     expect(a.changeOverPeriod).toBe(10);
   });
 
-  it("labels actual rows DD/MM and connects the seam", () => {
+  it("connects the actual and projected lines at the seam", () => {
     const a = prepareAnalytics([
       daySession("2026-07-01", "Bench Press", 100),
       daySession("2026-07-08", "Bench Press", 105),
       daySession("2026-07-15", "Bench Press", 110),
     ])[0];
 
-    expect(a.rows[0].label).toBe("01/07");
     // 3 actual points; the last one also seeds the projected line (seam).
     expect(a.rows[2].actual).toBe(110);
     expect(a.rows[2].projected).toBe(110);

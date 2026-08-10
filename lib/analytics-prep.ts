@@ -7,7 +7,7 @@ import {
 
 // Presentation-prep layer: turns raw sessions into the ExerciseAnalytics[] the
 // Progress-tab components consume. Separate from analytics.ts (pure math) because
-// this layer knows about chart concerns - ChartRow shape, DD/MM labels, the
+// this layer knows about chart concerns - ChartRow shape, the
 // actuals+projection merge, stat-tile numbers. Pure and testable; runs
 // server-side so no analytics code ships to the browser.
 
@@ -17,11 +17,10 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
  *  has a longer history. Keeps the chart readable and the extrapolation honest. */
 export const PROJECTION_CAP_DAYS = 30;
 
-/** One chart x-axis row. Mirrors ChartRow in exercise-chart.tsx (kept in sync
- *  by hand - this is the server-side producer, that's the client consumer). */
+/** One chart row. `t` is a real UTC timestamp - the x-axis is a numeric time
+ *  scale, so the chart formats its own tick labels and needs no label field. */
 export type ChartRow = {
   t: number;
-  label: string;
   actual: number | null;
   projected: number | null;
 };
@@ -37,14 +36,6 @@ export type ExerciseAnalytics = {
   currentOneRepMax: number | null;
   changeOverPeriod: number | null;
 };
-
-/** Format a UTC timestamp as "DD/MM". UTC throughout so a day never shifts. */
-function formatDDMM(ms: number): string {
-  const d = new Date(ms);
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}`;
-}
 
 /**
  * Prepares one exercise's series into its chart-ready analytics bundle:
@@ -74,7 +65,7 @@ function prepExercise(series: ExerciseSeries): ExerciseAnalytics {
   // Actual rows.
   const rows: ChartRow[] = pts.map((p) => {
     const t = new Date(p.date + "T00:00:00Z").getTime();
-    return { t, label: formatDDMM(t), actual: p.bestOneRepMax, projected: null };
+    return { t, actual: p.bestOneRepMax, projected: null };
   });
 
   // Seam + projected rows: the last actual also seeds the projected line so the
@@ -83,7 +74,7 @@ function prepExercise(series: ExerciseSeries): ExerciseAnalytics {
     rows[rows.length - 1].projected = rows[rows.length - 1].actual;
     for (const pp of projection) {
       const t = t0 + pp.dayOffset * MS_PER_DAY;
-      rows.push({ t, label: formatDDMM(t), actual: null, projected: pp.value });
+      rows.push({ t, actual: null, projected: pp.value });
     }
   }
 
