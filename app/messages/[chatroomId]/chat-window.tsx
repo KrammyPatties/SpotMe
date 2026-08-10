@@ -5,12 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import RoomInfo from "./room-info";
 import Avatar from "@/app/components/avatar";
+import { shouldShowSenderName } from "@/lib/chat-view";
 
 type Message = {
   id: string;
   chatroom_id: string;
   sender_id: string | null; // null for system messages
-  type?: "user" | "system";
+  type: "user" | "system";
   content: string;
   created_at: string;
   client_msg_id?: string | null; // set on messages we sent from this client
@@ -25,6 +26,8 @@ export default function ChatWindow({
   label,
   headerPhotoUrl,
   children,
+  memberNames,
+  isGroup,
 }: {
   chatroomId: string;
   currentUserId: string;
@@ -32,6 +35,8 @@ export default function ChatWindow({
   label?: string;
   headerPhotoUrl?: string | null;
   children?: React.ReactNode;
+  memberNames: Record<string, string>;
+  isGroup: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
@@ -149,6 +154,7 @@ async function postMessage(clientMsgId: string, content: string) {
       created_at: new Date().toISOString(),
       client_msg_id: clientMsgId,
       pending: true,
+      type: "user",
     };
     setMessages((prev) => [...prev, optimistic]);
 
@@ -180,7 +186,7 @@ async function postMessage(clientMsgId: string, content: string) {
       {children}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        {messages.map((m) => {
+        {messages.map((m, i) => {
           if (m.type === "system") {
             return (
               <div key={m.id} className="flex justify-center">
@@ -191,12 +197,18 @@ async function postMessage(clientMsgId: string, content: string) {
             );
           }              
           const mine = m.sender_id === currentUserId;
+          const showName = shouldShowSenderName(m, messages[i - 1] ?? null, currentUserId, isGroup);
           return (
             <div
               key={m.id}
               className={`flex ${mine ? "justify-end" : "justify-start"}`}
             >
               <div className="max-w-[75%]">
+                {showName && m.sender_id && (
+                  <span className="block text-xs font-medium text-ink/70 mb-0.5">
+                    {memberNames[m.sender_id] ?? "Unknown"}
+                  </span>
+                )}
                 <div
                   className={`rounded-lg px-3 py-2 ${
                     mine

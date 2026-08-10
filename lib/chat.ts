@@ -103,6 +103,33 @@ export async function getChatroomPhotoPaths(
     .filter((p): p is string => Boolean(p));
 }
 
+export async function getChatroomMemberNames(
+  chatroomId: string
+): Promise<Record<string, string>> {
+  const { data: members, error: membersError } = await supabaseAdmin
+    .from("chatroom_members")
+    .select("clerk_user_id")
+    .eq("chatroom_id", chatroomId);
+
+  if (membersError || !members || members.length === 0) return {};
+
+  const { data: profiles, error: profilesError } = await supabaseAdmin
+    .from("profiles")
+    .select("clerk_user_id, display_name")
+    .in(
+      "clerk_user_id",
+      members.map((m) => m.clerk_user_id)
+    );
+
+  if (profilesError || !profiles) return {};
+
+  const names: Record<string, string> = {};
+  for (const p of profiles) {
+    names[p.clerk_user_id] = p.display_name;
+  }
+  return names;
+}
+
 // Full roster of a room (for the members panel). Requester must be a member.
 export async function getChatroomMembers(
   chatroomId: string,

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { isChatroomMember, getChatroomLabel, getChatroomPhotoPaths } from "@/lib/chat";
+import { isChatroomMember, getChatroomLabel, getChatroomPhotoPaths, getChatroomMemberNames } from "@/lib/chat";
 import { getPhotoUrl } from "@/lib/photos";
 import ChatWindow from "./chat-window";
 import SessionPanel from "./session-panel";
@@ -46,6 +46,8 @@ export default async function ChatroomPage({
 
   const label = await getChatroomLabel(chatroomId, userId);
   const photoPaths = await getChatroomPhotoPaths(chatroomId, userId);
+  const memberNames = await getChatroomMemberNames(chatroomId);
+  const isGroup = Object.keys(memberNames).length > 2;
   const headerPhotoUrl = await getPhotoUrl(photoPaths[0] ?? null);
 
   return (
@@ -55,6 +57,8 @@ export default async function ChatroomPage({
       initialMessages={messages ?? []}
       label={label}
       headerPhotoUrl={headerPhotoUrl}
+      memberNames={memberNames}
+      isGroup={isGroup}
     >
       <SessionPanel
         chatroomId={chatroomId}
