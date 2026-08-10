@@ -3,6 +3,7 @@ import {
   projectForward,
   detectPlateau,
   type ExerciseSeries,
+  type TrendMetric,
 } from "./analytics";
 
 // Presentation-prep layer: turns raw sessions into the ExerciseAnalytics[] the
@@ -25,24 +26,31 @@ export type ChartRow = {
   projected: number | null;
 };
 
-/** The per-exercise bundle the Progress tab renders. Mirrors ExerciseAnalytics
- *  in progress-analytics.tsx. */
-export type ExerciseAnalytics = {
-  exerciseName: string;
+/** Everything that depends on WHICH metric is selected. exerciseName and
+ *  pointCount don't, so they stay on ExerciseAnalytics. */
+export type MetricView = {
   rows: ChartRow[];
   hasProjection: boolean;
   status: ReturnType<typeof detectPlateau>;
-  pointCount: number;
-  currentOneRepMax: number | null;
+  currentValue: number | null;
   changeOverPeriod: number | null;
 };
 
+/** The per-exercise bundle the Progress tab renders. All three metrics are
+ *  prepared eagerly server-side, so the toggle is instant and no analytics
+ *  code ships to the browser. */
+export type ExerciseAnalytics = {
+  exerciseName: string;
+  pointCount: number;
+  byMetric: Record<TrendMetric, MetricView>;
+};
+
 /**
- * Prepares one exercise's series into its chart-ready analytics bundle:
- * span-matched (capped) projection, merged actual/projected rows with a
- * connecting seam, plateau status, and the three stat-tile numbers.
+ * Prepares one exercise's series on ONE metric: span-matched (capped)
+ * projection, merged actual/projected rows with a connecting seam, plateau
+ * status, and the stat-tile numbers. Called once per metric by prepExercise.
  */
-function prepExercise(series: ExerciseSeries): ExerciseAnalytics {
+function prepMetric(series: ExerciseSeries, metric: TrendMetric): MetricView {
   const pts = series.points;
   const t0 = pts.length
     ? new Date(pts[0].date + "T00:00:00Z").getTime()
@@ -60,12 +68,12 @@ function prepExercise(series: ExerciseSeries): ExerciseAnalytics {
   // Project half the logged span (honest: predict less far than you've observed),
   // capped. min 1 so a valid (>=3pt) series always projects at least a day.
   const daysAhead = Math.min(Math.max(Math.round(spanDays / 2), 1), PROJECTION_CAP_DAYS);
-  const projection = projectForward(series, daysAhead);
+  const projection = projectForward(series, daysAhead, metric);
 
   // Actual rows.
   const rows: ChartRow[] = pts.map((p) => {
     const t = new Date(p.date + "T00:00:00Z").getTime();
-    return { t, actual: p.bestOneRepMax, projected: null };
+    return { t, actual: p[metric], projected: null };
   });
 
   // Seam + projected rows: the last actual also seeds the projected line so the
@@ -78,23 +86,34 @@ function prepExercise(series: ExerciseSeries): ExerciseAnalytics {
     }
   }
 
-  const status = detectPlateau(pts.map((p) => p.bestOneRepMax));
-  const currentOneRepMax = pts.length
-    ? pts[pts.length - 1].bestOneRepMax
-    : null;
+  const status = detectPlateau(pts.map((p) => p[metric]));
+  const currentValue = pts.length ? pts[pts.length - 1][metric] : null;
   const changeOverPeriod =
-    pts.length >= 2
-      ? pts[pts.length - 1].bestOneRepMax - pts[0].bestOneRepMax
-      : null;
+    pts.length >= 2 ? pts[pts.length - 1][metric] - pts[0][metric] : null;
 
   return {
-    exerciseName: series.exerciseName,
     rows,
     hasProjection: projection !== null,
     status,
-    pointCount: pts.length,
-    currentOneRepMax,
+    currentValue,
     changeOverPeriod,
+  };
+}
+
+/**
+ * One exercise, all three metrics. Listed explicitly rather than mapped over a
+ * union so the Record is exhaustive by construction — adding a TrendMetric
+ * fails to compile here until it's handled.
+ */
+function prepExercise(series: ExerciseSeries): ExerciseAnalytics {
+  return {
+    exerciseName: series.exerciseName,
+    pointCount: series.points.length,
+    byMetric: {
+      bestOneRepMax: prepMetric(series, "bestOneRepMax"),
+      topWeight: prepMetric(series, "topWeight"),
+      totalVolume: prepMetric(series, "totalVolume"),
+    },
   };
 }
 

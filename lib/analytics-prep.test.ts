@@ -51,46 +51,46 @@ describe("prepareAnalytics", () => {
     expect(result).toHaveLength(1);
     const a = result[0];
     expect(a.exerciseName).toBe("Bench Press");
-    expect(a.hasProjection).toBe(true);
+    expect(a.byMetric.bestOneRepMax.hasProjection).toBe(true);
     expect(a.pointCount).toBe(3);
-    expect(a.currentOneRepMax).toBe(110);
-    expect(a.changeOverPeriod).toBe(10);
+    expect(a.byMetric.bestOneRepMax.currentValue).toBe(110);
+    expect(a.byMetric.bestOneRepMax.changeOverPeriod).toBe(10);
   });
 
   it("connects the actual and projected lines at the seam", () => {
-    const a = prepareAnalytics([
+    const v = prepareAnalytics([
       daySession("2026-07-01", "Bench Press", 100),
       daySession("2026-07-08", "Bench Press", 105),
       daySession("2026-07-15", "Bench Press", 110),
-    ])[0];
+    ])[0].byMetric.bestOneRepMax;
 
     // 3 actual points; the last one also seeds the projected line (seam).
-    expect(a.rows[2].actual).toBe(110);
-    expect(a.rows[2].projected).toBe(110);
+    expect(v.rows[2].actual).toBe(110);
+    expect(v.rows[2].projected).toBe(110);
     // Projected rows appended after the actuals, with null actual.
-    expect(a.rows.length).toBeGreaterThan(3);
-    expect(a.rows[3].actual).toBeNull();
-    expect(a.rows[3].projected).not.toBeNull();
+    expect(v.rows.length).toBeGreaterThan(3);
+    expect(v.rows[3].actual).toBeNull();
+    expect(v.rows[3].projected).not.toBeNull();
   });
 
   it("does not project below three points but still computes tiles", () => {
-    const a = prepareAnalytics([
+    const v = prepareAnalytics([
       daySession("2026-07-01", "Squat", 100),
       daySession("2026-07-08", "Squat", 105),
-    ])[0];
+    ])[0].byMetric.bestOneRepMax;
 
-    expect(a.hasProjection).toBe(false);
-    expect(a.rows.every((r) => r.projected === null)).toBe(true);
-    expect(a.changeOverPeriod).toBe(5);
-    expect(a.status).toBe("insufficient_data");
+    expect(v.hasProjection).toBe(false);
+    expect(v.rows.every((r) => r.projected === null)).toBe(true);
+    expect(v.changeOverPeriod).toBe(5);
+    expect(v.status).toBe("insufficient_data");
   });
 
   it("handles a single-point series (no change, no projection)", () => {
     const a = prepareAnalytics([daySession("2026-07-01", "Deadlift", 120)])[0];
 
-    expect(a.currentOneRepMax).toBe(120);
-    expect(a.changeOverPeriod).toBeNull();
-    expect(a.hasProjection).toBe(false);
+    expect(a.byMetric.bestOneRepMax.currentValue).toBe(120);
+    expect(a.byMetric.bestOneRepMax.changeOverPeriod).toBeNull();
+    expect(a.byMetric.bestOneRepMax.hasProjection).toBe(false);
     expect(a.pointCount).toBe(1);
   });
 
@@ -102,7 +102,8 @@ describe("prepareAnalytics", () => {
     ])[0];
 
     const lastActualT = new Date("2026-07-20T00:00:00Z").getTime();
-    const lastRowT = a.rows[a.rows.length - 1].t;
+    const rows = a.byMetric.bestOneRepMax.rows;
+    const lastRowT = rows[rows.length - 1].t;
     const daysProjected = Math.round((lastRowT - lastActualT) / MS_PER_DAY);
     expect(daysProjected).toBe(PROJECTION_CAP_DAYS);
   });
@@ -120,4 +121,33 @@ describe("prepareAnalytics", () => {
     expect(result[0].pointCount).toBe(3);
     expect(result[1].exerciseName).toBe("Squat");
   });
+
+  it("prepares all three metrics with distinct values", () => {
+    // reps: 1 makes all three metrics coincide, so bump it: at 5 reps,
+    // est-1RM = 100 * (1 + 5/30), topWeight = 100, volume = 5 * 100.
+    const session = daySession("2026-07-01", "Row", 100);
+    session.exercises[0].sets[0].reps = 5;
+
+    const a = prepareAnalytics([session])[0];
+
+    expect(a.byMetric.bestOneRepMax.currentValue).toBeCloseTo(
+      100 * (1 + 5 / 30),
+    );
+    expect(a.byMetric.topWeight.currentValue).toBe(100);
+    expect(a.byMetric.totalVolume.currentValue).toBe(500);
+  });
+
+  it("projects independently on every metric", () => {
+    const a = prepareAnalytics([
+      daySession("2026-07-01", "Bench Press", 100),
+      daySession("2026-07-08", "Bench Press", 105),
+      daySession("2026-07-15", "Bench Press", 110),
+    ])[0];
+
+    for (const m of ["bestOneRepMax", "topWeight", "totalVolume"] as const) {
+      expect(a.byMetric[m].hasProjection).toBe(true);
+      expect(a.byMetric[m].rows.length).toBeGreaterThan(3);
+    }
+  });
+
 });
