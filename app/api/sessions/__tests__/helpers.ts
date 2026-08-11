@@ -85,3 +85,18 @@ export async function cleanup(
     await db.from("profiles").delete().in("clerk_user_id", userIds);
   }
 }
+
+export async function seedConfirmation(
+  db: SupabaseClient,
+  sessionId: string,
+  userId: string,
+  status: "going" | "out" = "going"
+) {
+  const { error } = await db
+    .from("session_confirmations")
+    .upsert(
+      { session_id: sessionId, user_id: userId, status },
+      { onConflict: "session_id,user_id" }
+    );
+  if (error) throw new Error(`seedConfirmation failed: ${error.message}`);
+}

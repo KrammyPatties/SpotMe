@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateSessionProposal, buildIcs } from "./scheduling";
+import { validateSessionProposal, buildIcs, deriveSessionStatus } from "./scheduling";
 
 // Fixed clock for all validation tests.
 const NOW = new Date("2026-07-25T00:00:00.000Z");
@@ -198,5 +198,58 @@ describe("buildIcs", () => {
     for (const line of ics.split("\r\n")) {
       expect(line.length).toBeLessThanOrEqual(75);
     }
+  });
+});
+
+describe("deriveSessionStatus", () => {
+  const PROPOSER = "user_proposer";
+  const OTHER = "user_other";
+  const THIRD = "user_third";
+
+  const going = (id: string) => ({ user_id: id, status: "going" as const });
+  const out = (id: string) => ({ user_id: id, status: "out" as const });
+
+  it("is proposed when only the proposer is going", () => {
+    expect(deriveSessionStatus(PROPOSER, [going(PROPOSER)])).toBe("proposed");
+  });
+
+  it("is confirmed once a non-proposer is going", () => {
+    expect(
+      deriveSessionStatus(PROPOSER, [going(PROPOSER), going(OTHER)])
+    ).toBe("confirmed");
+  });
+
+  it("does not let the proposer confirm their own session", () => {
+    expect(
+      deriveSessionStatus(PROPOSER, [going(PROPOSER), out(OTHER), out(THIRD)])
+    ).toBe("proposed");
+  });
+
+  it("reverts to proposed when the last non-proposer opts out", () => {
+    expect(
+      deriveSessionStatus(PROPOSER, [going(PROPOSER), out(OTHER)])
+    ).toBe("proposed");
+  });
+
+  it("stays confirmed while any other member is still going", () => {
+    expect(
+      deriveSessionStatus(PROPOSER, [going(PROPOSER), out(OTHER), going(THIRD)])
+    ).toBe("confirmed");
+  });
+
+  it("survives the proposer opting out of their own group session", () => {
+    expect(
+      deriveSessionStatus(PROPOSER, [out(PROPOSER), going(OTHER), going(THIRD)])
+    ).toBe("confirmed");
+  });
+
+  it("cancels when everyone has opted out", () => {
+    expect(
+      deriveSessionStatus(PROPOSER, [out(PROPOSER), out(OTHER)])
+    ).toBe("cancelled");
+  });
+
+  it("cancels on an empty confirmation set", () => {
+    expect(deriveSessionStatus(PROPOSER, [])).toBe("cancelled");
   });
 });

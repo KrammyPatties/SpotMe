@@ -308,3 +308,30 @@ where table_name in ('reports', 'moderation_actions');
 
 select column_name from information_schema.columns
 where table_name = 'profiles' and column_name like 'data_consent%';
+
+create table session_confirmations (
+  session_id   uuid not null references scheduled_sessions(id) on delete cascade,
+  user_id      text not null references profiles(clerk_user_id) on delete cascade,
+  status       text not null default 'going' check (status in ('going', 'out')),
+  responded_at timestamptz not null default now(),
+  primary key (session_id, user_id)
+);
+
+create index idx_session_confirmations_user
+  on session_confirmations (user_id);
+
+-- Every session's proposer was going at propose time.
+insert into session_confirmations (session_id, user_id, status, responded_at)
+select s.id, s.proposer_id, 'going', coalesce(s.created_at, now())
+from scheduled_sessions s
+on conflict do nothing;
+
+-- Approximation: for sessions that reached confirmed or completed,
+-- credit every room member as going. Who actually confirmed was never
+-- recorded - responded_at exists, but not the responder.
+insert into session_confirmations (session_id, user_id, status, responded_at)
+select s.id, cm.clerk_user_id, 'going', coalesce(s.responded_at, s.created_at, now())
+from scheduled_sessions s
+join chatroom_members cm on cm.chatroom_id = s.chatroom_id
+where s.status in ('confirmed', 'completed')
+on conflict do nothing;

@@ -99,3 +99,53 @@ export async function getUserGyms(userId: string): Promise<UserGym[]> {
 
   return (gyms ?? []) as UserGym[];
 }
+
+export async function getConfirmations(sessionId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("session_confirmations")
+    .select("user_id, status")
+    .eq("session_id", sessionId);
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getConfirmationsForSessions(sessionIds: string[]) {
+  if (sessionIds.length === 0) return {};
+
+  const { data, error } = await supabaseAdmin
+    .from("session_confirmations")
+    .select("session_id, user_id, status")
+    .in("session_id", sessionIds);
+
+  if (error) throw error;
+
+  const bySession: Record<string, { user_id: string; status: string }[]> = {};
+  for (const row of data ?? []) {
+    (bySession[row.session_id] ??= []).push({
+      user_id: row.user_id,
+      status: row.status,
+    });
+  }
+  return bySession;
+}
+
+export async function upsertConfirmation(
+  sessionId: string,
+  userId: string,
+  status: "going" | "out"
+) {
+  const { error } = await supabaseAdmin
+    .from("session_confirmations")
+    .upsert(
+      {
+        session_id: sessionId,
+        user_id: userId,
+        status,
+        responded_at: new Date().toISOString(),
+      },
+      { onConflict: "session_id,user_id" }
+    );
+
+  if (error) throw error;
+}

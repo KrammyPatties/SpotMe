@@ -5,12 +5,16 @@ import { useRouter } from "next/navigation";
 import type { ChatroomSession, UserGym } from "@/lib/supabase/sessions";
 import { PendingRating } from "@/lib/supabase/ratings";
 
+type Confirmation = { user_id: string; status: string };
+
 type Props = {
   chatroomId: string;
   currentUserId: string;
   sessions: ChatroomSession[];
   userGyms: UserGym[];
   pendingRating: PendingRating | null;
+  confirmations: Record<string, Confirmation[]>;
+  memberNames: Record<string, string>;
 };
 
 const DURATIONS = [
@@ -42,12 +46,32 @@ export function formatSlot(startsAt: string, endsAt: string): string {
   return `${date} · ${t(start)}–${t(end)}`;
 }
 
+// "Has not responded" and "opted out" are different states — collapsing
+// them would make the button lie to someone who declined.
+function attendanceFor(
+  rows: Confirmation[],
+  memberNames: Record<string, string>,
+  currentUserId: string
+) {
+  const going = rows.filter((r) => r.status === "going");
+  return {
+    count: going.length,
+    names: going.map((r) =>
+      r.user_id === currentUserId ? "you" : (memberNames[r.user_id] ?? "Unknown")
+    ),
+    iAmGoing: going.some((r) => r.user_id === currentUserId),
+    iHaveResponded: rows.some((r) => r.user_id === currentUserId),
+  };
+}
+
 export default function SessionPanel({
   chatroomId,
   currentUserId,
   sessions,
   userGyms,
   pendingRating,
+  confirmations,
+  memberNames,
 }: Props) {
   const router = useRouter();
 
@@ -104,19 +128,45 @@ export default function SessionPanel({
     }
   }
 
-  async function handleRespond(sessionId: string, action: "confirm" | "cancel") {
+  // Cancelling calls the session off for everyone and is proposer-only.
+  async function handleCancel(sessionId: string) {
     setError(null);
     setBusy(true);
     try {
       const res = await fetch("/api/sessions/respond", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, action }),
+        body: JSON.stringify({ session_id: sessionId, action: "cancel" }),
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Couldn't update that session");
+        return;
+      }
+
+      router.refresh();
+    } catch {
+      setError("Network error — try again");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Attendance is per-member: "not me", rather than "not happening".
+  async function handleAttend(sessionId: string, going: boolean) {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/sessions/attend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, going }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Couldn't update your attendance");
         return;
       }
 
@@ -248,6 +298,12 @@ export default function SessionPanel({
         <ul className="mt-3 space-y-2">
           {sessions.map((s) => {
             const isProposer = s.proposer_id === currentUserId;
+            const open = s.status === "proposed" || s.status === "confirmed";
+            const a = attendanceFor(
+              confirmations[s.id] ?? [],
+              memberNames,
+              currentUserId
+            );
 
             return (
               <li
@@ -282,31 +338,48 @@ export default function SessionPanel({
                   </span>
                 </div>
 
-                {s.status === "proposed" && (
+                {open && (
+                  <p className="mt-1 text-xs text-ink/70">
+                    {a.count === 0
+                      ? "Nobody going yet"
+                      : `${a.count} going: ${a.names.join(", ")}`}
+                  </p>
+                )}
+
+                {open && (
                   <div className="mt-2 flex gap-2">
-                    {!isProposer && (
-                      <button
-                        type="button"
-                        onClick={() => handleRespond(s.id, "confirm")}
-                        disabled={busy}
-                        className="rounded-full bg-flame px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
-                      >
-                        Confirm
-                      </button>
-                    )}
                     <button
                       type="button"
-                      onClick={() => handleRespond(s.id, "cancel")}
+                      onClick={() => handleAttend(s.id, !a.iAmGoing)}
                       disabled={busy}
-                      className="rounded-full border border-ink/25 px-3 py-1 text-xs font-semibold text-ink disabled:opacity-50"
+                      className={
+                        a.iAmGoing
+                          ? "rounded-full border border-ink/25 px-3 py-1 text-xs font-semibold text-ink disabled:opacity-50"
+                          : "rounded-full bg-flame px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                      }
                     >
-                      {isProposer ? "Withdraw" : "Decline"}
+                      {a.iAmGoing
+                        ? "I'm out"
+                        : a.iHaveResponded
+                          ? "Re-join"
+                          : "I'm in"}
                     </button>
+
+                    {isProposer && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancel(s.id)}
+                        disabled={busy}
+                        className="rounded-full border border-ink/25 px-3 py-1 text-xs font-semibold text-ink disabled:opacity-50"
+                      >
+                        Cancel session
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {s.status === "confirmed" && (
-                  <a
+                {s.status === "confirmed" && a.iAmGoing && (
+                    <a
                     href={`/api/sessions/${s.id}/ics`}
                     className="mt-2 inline-block rounded-full border border-ink/25 px-3 py-1 text-xs font-semibold text-ink"
                   >

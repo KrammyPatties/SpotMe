@@ -5,7 +5,7 @@ import { isChatroomMember, getChatroomLabel, getChatroomPhotoPaths, getChatroomM
 import { getPhotoUrl } from "@/lib/photos";
 import ChatWindow from "./chat-window";
 import SessionPanel from "./session-panel";
-import { getSessionsForChatroom, ensureCompletedSessions, getUserGyms } from "@/lib/supabase/sessions";
+import { getSessionsForChatroom, ensureCompletedSessions, getUserGyms, getConfirmationsForSessions } from "@/lib/supabase/sessions";
 import { getPendingRating } from "@/lib/supabase/ratings";
 
 // Server component: authenticates, authorises and loads history
@@ -49,6 +49,8 @@ export default async function ChatroomPage({
   const memberNames = await getChatroomMemberNames(chatroomId);
   const isGroup = Object.keys(memberNames).length > 2;
   const headerPhotoUrl = await getPhotoUrl(photoPaths[0] ?? null);
+  const sessionIds = sessions.map((s) => s.id);
+  const confirmationsBySession = await getConfirmationsForSessions(sessionIds);
 
   return (
     <ChatWindow
@@ -66,6 +68,8 @@ export default async function ChatroomPage({
         sessions={sessions}
         userGyms={userGyms}
         pendingRating={pendingRating}
+        confirmations={confirmationsBySession}
+        memberNames={memberNames}
       />
     </ChatWindow>
   );
