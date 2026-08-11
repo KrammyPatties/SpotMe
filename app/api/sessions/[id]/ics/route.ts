@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { isChatroomMember } from "@/lib/chat";
 import { isUuid } from "@/lib/uuid";
 import { buildIcs } from "@/lib/scheduling";
+import { getConfirmations } from "@/lib/supabase/sessions";
 
 export async function GET(
   _req: Request,
@@ -44,6 +45,14 @@ export async function GET(
       { error: "Only confirmed sessions can be added to a calendar" },
       { status: 409 }
     );
+  }
+
+  const confirmations = await getConfirmations(session.id);
+  const attending = confirmations.some(
+    (c) => c.user_id === userId && c.status === "going"
+  );
+  if (!attending) {
+    return NextResponse.json({ error: "not attending" }, { status: 403 });
   }
 
   // Batched, never a nested join.

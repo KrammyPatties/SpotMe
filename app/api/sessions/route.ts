@@ -39,8 +39,21 @@ export async function POST(req: Request) {
     .select()
     .single();
 
-  if (error) {
+if (error) {
     console.error("session insert failed:", error);
+    return NextResponse.json(
+      { error: "Failed to propose session" },
+      { status: 500 }
+    );
+  }
+
+  const { error: confirmError } = await supabaseAdmin
+    .from("session_confirmations")
+    .insert({ session_id: data.id, user_id: userId, status: "going" });
+
+  if (confirmError) {
+    console.error("proposer confirmation insert failed:", confirmError);
+    await supabaseAdmin.from("scheduled_sessions").delete().eq("id", data.id);
     return NextResponse.json(
       { error: "Failed to propose session" },
       { status: 500 }

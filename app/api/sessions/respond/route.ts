@@ -3,8 +3,9 @@ import { auth } from "@clerk/nextjs/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { isChatroomMember } from "@/lib/chat";
 import { isUuid } from "@/lib/uuid";
+import { assertNotSuspended } from "@/lib/moderation-guard";
 
-const ACTIONS = ["confirm", "cancel"] as const;
+const ACTIONS = ["cancel"] as const;
 type Action = (typeof ACTIONS)[number];
 
 export async function POST(req: Request) {
@@ -12,6 +13,9 @@ export async function POST(req: Request) {
   if (!isAuthenticated) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const suspended = await assertNotSuspended(userId);
+  if (suspended) return suspended;
 
   let body: unknown;
   try {
@@ -34,7 +38,7 @@ export async function POST(req: Request) {
 
   if (!ACTIONS.includes(action as Action)) {
     return NextResponse.json(
-      { error: "action must be 'confirm' or 'cancel'" },
+      { error: "action must be 'cancel'" },
       { status: 400 }
     );
   }
@@ -58,20 +62,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (action === "confirm" && session.proposer_id === userId) {
+  if (session.proposer_id !== userId) {
     return NextResponse.json(
-      { error: "You cannot confirm your own proposal" },
+      { error: "Only the proposer can cancel a session" },
       { status: 403 }
     );
   }
 
-  const nextStatus = action === "confirm" ? "confirmed" : "cancelled";
+  const nextStatus = "cancelled";
 
   const { data, error } = await supabaseAdmin
     .from("scheduled_sessions")
     .update({ status: nextStatus, responded_at: new Date().toISOString() })
     .eq("id", session_id)
-    .eq("status", "proposed")
+    .in("status", ["proposed", "confirmed"])
     .select()
     .maybeSingle();
 

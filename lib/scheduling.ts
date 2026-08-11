@@ -98,6 +98,25 @@ export function validateSessionProposal(
   };
 }
 
+export type ConfirmationStatus = "going" | "out";
+
+export type Confirmation = {
+  user_id: string;
+  status: ConfirmationStatus;
+};
+
+export type DerivedStatus = "proposed" | "confirmed" | "cancelled";
+
+export function deriveSessionStatus(
+  proposerId: string,
+  confirmations: Confirmation[]
+): DerivedStatus {
+  const going = confirmations.filter((c) => c.status === "going");
+  if (going.length === 0) return "cancelled";
+  if (going.some((c) => c.user_id !== proposerId)) return "confirmed";
+  return "proposed";
+}
+
 // ICS generation (RFC 5545)
 
 export type IcsEvent = {
