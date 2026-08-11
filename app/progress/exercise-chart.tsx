@@ -31,9 +31,11 @@ function formatDDMM(ms: number): string {
 export function ExerciseChart({
   rows,
   hasProjection,
+  yAxisLabel,
 }: {
   rows: ChartRow[];
   hasProjection: boolean;
+  yAxisLabel: string;
 }) {
   return (
     <div style={{ width: "100%", height: 280 }}>
@@ -56,10 +58,10 @@ export function ExerciseChart({
 
           <YAxis
             tick={{ fontSize: 12, fill: "rgba(17,17,17,0.6)" }}
-            width={48}
+            width={64}
             domain={["auto", "auto"]}
           >
-            <Label value="Est. 1RM (kg)" angle={-90} position="insideLeft"
+            <Label value={yAxisLabel} angle={-90} position="insideLeft"
               style={{ fontSize: 12, fill: "rgba(17,17,17,0.6)", textAnchor: "middle" }} />
           </YAxis>
 
